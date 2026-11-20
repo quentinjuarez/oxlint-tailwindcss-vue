@@ -6,3 +6,4 @@ coverage/
 !.yarn/releases
 *.log
 .DS_Store
+.superpowers/
