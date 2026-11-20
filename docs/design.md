@@ -1,0 +1,285 @@
+# Design: oxlint-tailwindcss-vue
+
+Status: draft for review, 2026-11-20. Versions studied: oxlint 1.94.0,
+oxlint-tailwindcss 1.17.2, tailwindcss 4.3.5, @vue/compiler-sfc 3.5.46.
+
+## Problem
+
+oxlint passes only the `<script>` blocks of a `.vue` file to JS plugins, so
+oxlint-tailwindcss never sees the classes written in a Vue `<template>`. The oxc
+compatibility page says "No template linting yet" for Vue, and the plugin's
+documentation says "Classes written in a template are not checked yet". Official
+support depends on oxc language plugins (oxc#21936), which have no release date.
+In a Vue app most classes live in templates, so a typo there passes the lint
+silently. The usual workaround is to keep ESLint for templates only.
+
+## Goals
+
+1. Check every class attribute of Vue SFC templates with the user's own
+   oxlint-tailwindcss rules, options and settings. Three rules judge a whole
+   JSX element and never run through a function call: `no-dark-without-light`,
+   `no-contradicting-variants` and `no-borrowed-component-styles` (see "Open
+   question").
+2. Report each finding at the exact line and column of the `.vue` file.
+3. Need no configuration beyond the existing oxlint config.
+4. Never crash or report a wrong position on a valid Vue file. What cannot be
+   checked safely is skipped, with a reason available in `--debug` output.
+5. Stay fast: one oxlint process per config group, not one per file.
+
+## Non-goals for 0.1
+
+- Not an oxlint plugin: a plugin cannot report outside the `<script>` range
+  (oxc#20465). The package is a CLI that runs next to oxlint.
+- No editor integration.
+- No linting of `<script>` blocks: oxlint already does it.
+- No `--fix` (planned for 0.2, see "Fixes").
+- No Svelte, Astro, Vue 2 or Pug templates.
+- No merged report with the native oxlint run: users chain
+  `oxlint && oxlint-tailwindcss-vue`.
+
+## Anti-goals
+
+- A wrong line or column. It is worse than no report.
+- A report that also comes from the native oxlint run.
+- False reports on classes the component defines in its own `<style>`.
+- Writing to the user's project. 0.1 is read-only.
+
+## Approaches considered
+
+| Approach                                                      | Result                                                                                  | Decision                                  |
+| :------------------------------------------------------------ | :-------------------------------------------------------------------------------------- | :---------------------------------------- |
+| Convert the whole SFC to JSX (vue-oxc-parser 0.1.2)           | 17 of 93 real files crash the converter, 30 more give invalid JSX                       | Rejected                                  |
+| An oxlint JS plugin that reads the template itself            | oxlint refuses reports outside the `<script>` range                                     | Rejected until oxc ships language plugins |
+| Tailwind language server (tw-lint)                            | Works on templates, but other checks: no unknown or duplicate classes, no oxlint config | Different tool, listed as an alternative  |
+| Offset-preserving virtual files run through the user's oxlint | 93 of 93 files, 621 class attributes, 0 parse errors, about 1 s                         | Chosen                                    |
+
+## How it works
+
+1. **Select files.** Run `oxlint --debug=files` with the user's paths and
+   ignore flags, in the user's cwd, and keep the `.vue` entries. This honors
+   `.gitignore`, `ignorePatterns` and `--ignore-pattern` exactly like oxlint.
+2. **Read the config.** For each file, find the nearest oxlint config (or the
+   user's `-c`) and flatten it with `oxlint --print-config`.
+3. **Virtualize.** Parse each file with `@vue/compiler-sfc` and build a virtual
+   `.ts` file (see "Virtual file contract").
+4. **Derive a config** per group of files sharing a config and a CSS entry
+   point (see "Derived config").
+5. **Run oxlint once per group** on the virtual files in a temp dir.
+6. **Map back** each diagnostic to the original file, line and column.
+7. **Report and exit** (see "Output" and "Exit codes").
+
+## Virtual file contract
+
+The virtual file has the same length as the `.vue` file in UTF-16 code units
+and the same line breaks at the same indices. Every character is replaced by
+an ASCII space (two spaces for an astral character) except `\n` and `\r`, then
+each checked class attribute is written back at its original offset inside a
+call to a private callee, `__`, added to `settings.tailwindcss.callees`:
+
+| In the template             | In the virtual file         |
+| :-------------------------- | :-------------------------- |
+| `class="flex p-2"`          | ``  ;__(`flex p-2`)``       |
+| `:class="{ 'p-2': x }"`     | `    ;__({ 'p-2': x })`     |
+| `v-bind:class="[a, 'p-2']"` | `          ;__([a, 'p-2'])` |
+
+Rules:
+
+1. The literal or expression keeps its exact offset, so the plugin reports it
+   at the right place.
+2. Wrapper characters go only on blanked ASCII slots that are not line breaks:
+   inside the attribute's own span, in the whitespace just before it, or, for
+   the closing `)` of a static value, on the first such slot after the value.
+   No slot is written twice. When there is no room, the attribute is skipped,
+   and a skipped attribute stays blank.
+3. Static values become template literals, so backslashes and line breaks keep
+   their raw value. A `\r\n` inside a value is written as ` \n` (same length,
+   same lines). A value with a backtick or `${` keeps its original quotes when
+   it fits on one line without a backslash; otherwise it is skipped.
+4. The virtual file must parse as a TypeScript module. It is parsed with
+   `@babel/parser`; on an error, the rewrite at the error offset is blanked and
+   the file is parsed again.
+5. Skipped, with a reason: values with HTML entities, expressions Vue itself
+   rejects (`exp.ast === false`), invalid escape sequences, unquoted values
+   that contain quotes, classes on `<template>` wrappers (`v-if`, `v-for`,
+   slots), which Vue does not render, templates with a `lang` other than HTML,
+   and `<template src>`.
+6. Checked attributes: `class`, `:class`, `v-bind:class`, the class props of
+   Vue's built-in components (`Transition`, `TransitionGroup`, `RouterLink`),
+   and every attribute listed in the user's oxlint-tailwindcss `attributes` or
+   `attributePatterns` settings, in kebab or camel case.
+7. Disable comments: an HTML comment whose text starts with `oxlint-disable`,
+   `oxlint-enable`, `eslint-disable` or `eslint-enable` becomes a JS block
+   comment of the same length at the same offsets (`<!--` becomes `/*` and two
+   spaces, `-->` becomes a space and `*/`), so
+   `<!-- oxlint-disable-next-line tailwindcss/no-unknown-classes -->` works in
+   a template. A comment whose text contains `*/` stays blank.
+
+The full rule set, with one fixture per case, lives in the
+`virtual-file-contract` skill and in `test/fixtures/`.
+
+## Derived config
+
+Written to the temp root and passed with `-c`, so no config near the temp files
+can interfere:
+
+- `plugins: []`, `categories: {}`, `ignorePatterns: []`.
+- `jsPlugins`: the absolute path of the user's oxlint-tailwindcss, resolved
+  from the config directory with the import conditions.
+- `settings.tailwindcss`: the user's block, with `entryPoint` made absolute and
+  the private callee added.
+- `rules`: only the `tailwindcss/*` rules (or the user's alias), with option
+  paths made absolute.
+- `overrides`: first, one per file with the classes from its `<style>` blocks
+  added to `no-unknown-classes`' `allowlist`; then the user's overrides reduced
+  to the Tailwind rules, with every `.vue` glob duplicated as `.vue.ts`. The
+  user's overrides come last so they win.
+
+`extends` is not used: it drops `settings` and `ignorePatterns`.
+
+## Running oxlint
+
+```
+node <oxlint bin> -c <tmp>/.oxlintrc.json --format json -A all
+  --no-error-on-unmatched-pattern <virtual paths relative to the child cwd>
+```
+
+- oxlint is resolved from the user's project and spawned with
+  `process.execPath`, never through a `.cmd` shim.
+- `-A all` turns the native rules off; only the Tailwind rules remain.
+- Paths are explicit, in chunks below the Windows command-line limit. A
+  directory walk would be emptied by a `.gitignore` above the temp dir.
+- `--quiet`, `--max-warnings` and `--deny-warnings` are never passed to the
+  child: the CLI applies them itself on the mapped results.
+- The CLI checks that `number_of_files` equals the number of paths sent.
+
+## Mapping back
+
+oxlint reports UTF-8 byte offsets and byte columns. The CLI converts the byte
+offset to a UTF-16 index through the virtual text, which equals the index in
+the `.vue` file, then computes the line and column on the original text. Paths
+come back relative to the child cwd, absolute, or as `file://` URLs (JetBrains
+terminals); all three are handled. A message that contains a virtual path is
+rewritten to the original path.
+
+## Classes defined in `<style>`
+
+A tolerant tokenizer reads the `<style>` blocks: it skips comments (and `//` in
+SCSS, Less and Stylus), strings and `url()`, splits selectors on top-level
+commas, resolves `&` against the parent selector, decodes CSS escapes, keeps
+`@utility` names, and counts only `:global()` names in CSS modules. The names
+feed the per-file `allowlist` override.
+
+## Output
+
+- `default`: one line per finding, `path:line:column severity rule message`,
+  then a summary. Colors through `util.styleText`, which honors `NO_COLOR`.
+  Columns count UTF-16 code units, like editors and clickable terminal links.
+- `json`: oxlint's JSON shape and units, with original paths: `offset`,
+  `length` and `column` count UTF-8 bytes of the `.vue` file, exactly as oxlint
+  reports script blocks, so both outputs can be merged.
+- `github`: workflow commands, so findings show up as annotations in pull
+  requests. Columns count UTF-16 code units.
+
+## Exit codes
+
+| Code     | Meaning                                                                                                                          |
+| :------- | :------------------------------------------------------------------------------------------------------------------------------- |
+| 0        | No error, and warnings within `--max-warnings`                                                                                   |
+| 1        | At least one error, a virtual file oxlint could not parse, or warnings over the limit                                            |
+| 2        | Tool failure: oxlint not found, no oxlint-tailwindcss in `jsPlugins`, missing CSS entry point, unexpected oxlint output or crash |
+| 130, 143 | Interrupted by SIGINT or SIGTERM                                                                                                 |
+
+## Command line
+
+```
+oxlint-tailwindcss-vue [options] [paths...]
+
+  -c, --config <path>       oxlint config file (default: oxlint's lookup)
+      --ignore-path <path>  passed to oxlint's file selection
+      --ignore-pattern <p>  passed to oxlint's file selection, repeatable
+      --no-ignore           passed to oxlint's file selection
+  -f, --format <name>       default, json or github
+      --quiet               report errors only
+      --max-warnings <n>    exit 1 above n warnings
+      --deny-warnings       exit 1 on any warning
+      --debug               list skipped attributes with their reason
+  -h, --help
+  -V, --version
+```
+
+## Programmatic API
+
+- `virtualize(source, options)` returns the virtual code, the rewritten regions
+  and the skipped attributes with their reason.
+- `lint(options)` runs the whole pipeline and returns the mapped diagnostics.
+
+## Temp files and signals
+
+- The temp root is `realpath(mkdtemp(realpath(os.tmpdir())/oxlint-tailwindcss-vue-))`.
+- It is removed in `finally` and on SIGINT, SIGTERM, SIGHUP and SIGBREAK, after
+  the child has exited (Windows refuses to delete files still open).
+- Stale temp roots older than a day are pruned at start.
+- The plugin's own cache in the temp dir is never touched.
+
+## Fixes (0.2)
+
+Fixes change lengths and line counts, so they cannot be copied back by offset.
+The validated strategy: run `--fix` in a loop until nothing changes, compare
+the token skeletons of the virtual file before and after, and copy back only
+changed string tokens whose original text still matches. A fix is refused when
+the file no longer parses, the skeleton changes, the file changed on disk, or
+the new value contains its quote character, a backslash, a backtick or `${`.
+
+## Testing
+
+- **Fixture corpus:** about 30 `.vue` fixtures (quoting, line breaks around
+  `=`, CRLF, BOM, non-ASCII text, escapes, entities, every `:class` shape,
+  TypeScript in expressions, invalid expressions, directive forms, elements,
+  template wrappers, `v-pre`, template blocks, broken templates, style
+  dialects). Each test checks the contract: same UTF-16 length, same line
+  breaks, valid TypeScript, expected rewrites and skips.
+- **Property-based tests** with fast-check on random attribute layouts and
+  values: the contract must hold for every input.
+- **Integration tests** that run the real oxlint and oxlint-tailwindcss on
+  fixture projects and assert each finding's line and column in the `.vue`
+  file, on Linux and Windows.
+- **Acceptance** on a real app before each release (paint-emoji: 93 files).
+- Coverage thresholds: 95% statements, functions and lines, 90% branches.
+
+## Requirements
+
+- Node 22.12.0 or newer.
+- oxlint 1.94.0 or newer: it is the first version whose `--print-config` keeps
+  the settings of JS plugins and the options of their rules (oxc#29534,
+  #29533, #29530). Older versions lose `entryPoint`.
+- oxlint-tailwindcss 1.17.2 or newer, the version the tests run.
+- Tailwind CSS 4.1.15 or newer, as oxlint-tailwindcss requires.
+
+## Decisions after the builder review
+
+- Minimum versions as above, instead of a config reader of our own for older
+  oxlint versions.
+- Disable comments in templates are supported in 0.1 (contract rule 7): a
+  linter needs an inline way out.
+- Column units are fixed per format (see "Output").
+- `--fix` comes in 0.2, after 0.1 has proven the positions on real projects.
+- Nuxt: `.vue` files work the same way; a Nuxt fixture confirms it before the
+  `nuxt` keyword is added.
+
+## Open question
+
+The plugin cannot judge two kinds of template code through a function call,
+and 0.1 has to choose between documenting them and working around them:
+
+1. `no-dark-without-light`, `no-contradicting-variants` and
+   `no-borrowed-component-styles` only judge the class list of a JSX element.
+   Running them would need JSX wrappers around native elements (a `.tsx`
+   virtual file, more room around each attribute) and Vue rules for when a
+   static `class` is an element's final class list (not with a `:class` on the
+   same element, nor on a component root that inherits classes).
+2. The plugin reads only quoted object keys, so `:class="{ active: isActive }"`
+   is rewritten but its key is never checked. Checking unquoted keys would
+   need a second virtual pass where each key is its own literal at its offset.
+
+Recommendation: document both in 0.1 (README Limitations, and a `--debug`
+note for unquoted keys), and work on them after 0.1.
