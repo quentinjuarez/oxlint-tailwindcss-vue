@@ -66,11 +66,14 @@ before it: `<p ui="a">` becomes ``  ;__(`a`)`` (two blanks first).
 ## Checked attributes
 
 - `class`, `:class`, `v-bind:class` on any element, component or slot outlet.
-- Vue built-in class props, kebab or camel case: `enter-from-class`,
-  `enter-active-class`, `enter-to-class`, `leave-from-class`,
-  `leave-active-class`, `leave-to-class`, `appear-from-class`,
-  `appear-active-class`, `appear-to-class`, `move-class`, `active-class`,
-  `exact-active-class`.
+- Vue built-in class props, kebab or camel case, only on their components:
+  - on `Transition`, `TransitionGroup`, `transition` and `transition-group`:
+    `enter-from-class`, `enter-active-class`, `enter-to-class`,
+    `leave-from-class`, `leave-active-class`, `leave-to-class`,
+    `appear-from-class`, `appear-active-class`, `appear-to-class`,
+    `move-class`;
+  - on `RouterLink`, `router-link`, `NuxtLink` and `nuxt-link`:
+    `active-class`, `exact-active-class`.
 - Every name in the user's `settings.tailwindcss.attributes`, and every name
   matching `attributePatterns`.
 - Unquoted object keys (`:class="{ active: x }"`) are copied, but
