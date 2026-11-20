@@ -39,7 +39,7 @@ The same rules apply to every checked attribute, not only `class`.
 | Source                                 | Virtual                    | Notes                                                                                   |
 | :------------------------------------- | :------------------------- | :-------------------------------------------------------------------------------------- |
 | `class="a b"` or `class='a b'`         | ``;__(`a b`)``             | quotes become backticks; `)` on the first slot after the value that is not a line break |
-| value spanning lines                   | template literal           | `\r\n` inside the value is written as ` \n`                                             |
+| value spanning lines                   | template literal           | line breaks copied as they are, `\r` included (invariant 2)                             |
 | value with a backtick or `${`          | original quotes kept       | only on one line without a backslash, else skip `invalid-escape`                        |
 | `:class="expr"`, `v-bind:class="expr"` | `;__(expr)`                | expression copied raw; `)` replaces the closing quote                                   |
 | `class=a` (unquoted)                   | backticks around the value | needs free slots on both sides, else skip `no-room`                                     |

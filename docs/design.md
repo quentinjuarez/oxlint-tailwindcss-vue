@@ -92,8 +92,10 @@ Rules:
    No slot is written twice. When there is no room, the attribute is skipped,
    and a skipped attribute stays blank.
 3. Static values become template literals, so backslashes and line breaks keep
-   their raw value. A `\r\n` inside a value is written as ` \n` (same length,
-   same lines). A value with a backtick or `${` keeps its original quotes when
+   their raw value; line breaks stay exactly as in the source, `\r` included.
+   (`--fix` in 0.2 will need `\r\n` written as ` \n`, because the plugin
+   sizes fix ranges on the LF-normalized raw value; reports do not depend on
+   it.) A value with a backtick or `${` keeps its original quotes when
    it fits on one line without a backslash; otherwise it is skipped.
 4. The virtual file must parse as a TypeScript module. It is parsed with
    `@babel/parser`; on an error, the rewrite at the error offset is blanked and
