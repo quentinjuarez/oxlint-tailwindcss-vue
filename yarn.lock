@@ -1218,8 +1218,8 @@ __metadata:
     vite: ^8.3.8
     vitest: ^5.1.1
   peerDependencies:
-    oxlint: ^1.43.0
-    oxlint-tailwindcss: ^1.17.0
+    oxlint: ^1.94.0
+    oxlint-tailwindcss: ^1.17.2
   bin:
     oxlint-tailwindcss-vue: dist/cli.js
   languageName: unknown
