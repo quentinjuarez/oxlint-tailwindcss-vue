@@ -1,0 +1,79 @@
+{
+  "name": "oxlint-tailwindcss-vue",
+  "version": "0.1.0",
+  "description": "Lint Tailwind CSS classes in Vue templates with oxlint and oxlint-tailwindcss. Oxlint alone only checks the script blocks of .vue files.",
+  "keywords": [
+    "cli",
+    "lint",
+    "linter",
+    "oxc",
+    "oxlint",
+    "oxlint-tailwindcss",
+    "tailwind",
+    "tailwindcss",
+    "tailwindcss-v4",
+    "template",
+    "vue",
+    "vue-sfc",
+    "vue3"
+  ],
+  "homepage": "https://github.com/quentinjuarez/oxlint-tailwindcss-vue#readme",
+  "bugs": "https://github.com/quentinjuarez/oxlint-tailwindcss-vue/issues",
+  "license": "MIT",
+  "author": "quentinjuarez (https://www.quentinjuarez.dev)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/quentinjuarez/oxlint-tailwindcss-vue.git"
+  },
+  "bin": "dist/cli.js",
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "lint:package": "publint --strict",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check .",
+    "verify": "yarn lint && yarn format:check && yarn typecheck && yarn test:coverage && yarn build && yarn lint:package",
+    "prepublishOnly": "yarn build"
+  },
+  "dependencies": {
+    "@babel/parser": "^7.29.12",
+    "@vue/compiler-sfc": "^3.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@vitest/coverage-v8": "^5.1.1",
+    "fast-check": "^4.10.3",
+    "oxfmt": "^0.79.0",
+    "oxlint": "^1.94.0",
+    "oxlint-tailwindcss": "^1.17.2",
+    "publint": "^0.3.25",
+    "tailwindcss": "^4.3.5",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.1"
+  },
+  "peerDependencies": {
+    "oxlint": "^1.43.0",
+    "oxlint-tailwindcss": "^1.17.0"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "packageManager": "yarn@3.8.6"
+}

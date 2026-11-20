@@ -1,0 +1,119 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      strategy:
+        description: 'Force a release regardless of the commit messages'
+        type: choice
+        default: none
+        options: [none, current, patch, minor, major]
+
+permissions:
+  contents: read
+
+jobs:
+  compat:
+    name: test (${{ matrix.os }}, node ${{ matrix.node }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            node: 22.12.0
+          - os: windows-latest
+            node: 26.13.1
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+      - run: yarn install --immutable
+      - run: yarn test
+
+  ci:
+    needs: compat
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: release-${{ github.ref }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+      - run: yarn install --immutable
+      - run: yarn verify
+
+      # Conventional Commits decide the version: feat -> minor, fix and perf ->
+      # patch, a `!` or a BREAKING CHANGE footer -> major, anything else -> no
+      # release. Releases stay off until the repository variable RELEASE_ENABLED
+      # is true, which is set once npm trusted publishing is configured.
+      - name: Decide the release
+        id: decide
+        if: github.event_name != 'pull_request' && vars.RELEASE_ENABLED == 'true'
+        env:
+          COMMITS: ${{ toJSON(github.event.commits.*.message) }}
+          FORCED: ${{ inputs.strategy }}
+        run: node scripts/decide-bump.mjs >> "$GITHUB_OUTPUT"
+
+      - name: Bump the version
+        id: version
+        if: steps.decide.outputs.strategy != '' && steps.decide.outputs.strategy != 'none'
+        env:
+          STRATEGY: ${{ steps.decide.outputs.strategy }}
+        run: |
+          if [ "$STRATEGY" = "current" ]; then
+            version="$(node -p 'require("./package.json").version')"
+          else
+            version="$(node scripts/bump-version.mjs "$STRATEGY")"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Releasing v$version ($STRATEGY)"
+
+      # npm first: publishing is the irreversible half, so a failure here leaves
+      # no commit and no tag behind. Trusted publishing (OIDC) adds provenance.
+      - name: Publish to npm
+        if: steps.version.outputs.version != ''
+        run: npm publish
+
+      - name: Commit and tag the release
+        if: steps.version.outputs.version != ''
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "quentinjuarez"
+          git config user.email "quentin.juarez@hotmail.fr"
+          if ! git diff --quiet -- package.json; then
+            git add package.json
+            git commit -q -m "release: v$VERSION"
+          fi
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null 2>&1; then
+            echo "Tag v$VERSION is already on the remote, leaving it alone."
+          else
+            git tag -a "v$VERSION" -m "v$VERSION"
+            git push origin "refs/tags/v$VERSION"
+          fi
+
+      - name: Create the GitHub release
+        if: steps.version.outputs.version != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release view "v$VERSION" >/dev/null 2>&1 ||
+            gh release create "v$VERSION" --title "v$VERSION" --generate-notes

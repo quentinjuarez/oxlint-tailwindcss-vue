@@ -1,0 +1,8 @@
+node_modules/
+dist/
+coverage/
+.vitest/
+.yarn/*
+!.yarn/releases
+*.log
+.DS_Store

@@ -1,0 +1,55 @@
+name: Bug report
+description: A class is reported wrongly, a class is missed, or the CLI fails.
+labels: [bug]
+body:
+  - type: textarea
+    id: versions
+    attributes:
+      label: Versions
+      description: Run `npx oxlint-tailwindcss-vue --version`, `npx oxlint --version` and `node --version`.
+      value: |
+        oxlint-tailwindcss-vue:
+        oxlint:
+        oxlint-tailwindcss:
+        tailwindcss:
+        vue:
+        Node.js:
+        Operating system:
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: oxlint configuration
+      description: Your `.oxlintrc.json` or `oxlint.config.ts`, at least `jsPlugins`, `settings.tailwindcss` and the `tailwindcss/*` rules.
+      render: jsonc
+    validations:
+      required: true
+  - type: textarea
+    id: sfc
+    attributes:
+      label: Minimal .vue file
+      description: The smallest component that shows the problem.
+      render: vue
+    validations:
+      required: true
+  - type: input
+    id: command
+    attributes:
+      label: Command
+      placeholder: npx oxlint-tailwindcss-vue src
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual output
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected output
+    validations:
+      required: true
