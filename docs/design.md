@@ -88,7 +88,8 @@ Rules:
    at the right place.
 2. Wrapper characters go only on blanked ASCII slots that are not line breaks:
    inside the attribute's own span, in the whitespace just before it, or, for
-   the closing `)` of a static value, on the first such slot after the value.
+   the closing `)` of a static value, on the first such slot after the value
+   and before the next attribute or the end of the tag.
    No slot is written twice. When there is no room, the attribute is skipped,
    and a skipped attribute stays blank.
 3. Static values become template literals, so backslashes and line breaks keep

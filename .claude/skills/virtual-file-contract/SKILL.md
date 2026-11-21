@@ -23,8 +23,8 @@ is never bent to make a case pass: the attribute is skipped with a reason.
    - a wrapper character (`;`, `_`, `(`, `)`, a backtick) written on an index
      where `source` holds an ASCII character that is not a line break, either
      inside the attribute's span, in the whitespace just before it, or on the
-     first slot after the value that is not a line break (the closing `)` of a
-     static value).
+     first free slot after the value, before the next attribute or the end of
+     the tag (the closing `)` of a static value; no such slot means `no-room`).
 4. No index is written twice. The rewriter tracks used slots; a rewrite that
    needs a used slot is skipped with `no-room`.
 5. A skipped attribute stays blank, exactly like the text around it.
@@ -36,13 +36,13 @@ is never bent to make a case pass: the attribute is skipped with a reason.
 The private callee is `__`; the CLI adds it to `settings.tailwindcss.callees`.
 The same rules apply to every checked attribute, not only `class`.
 
-| Source                                 | Virtual                    | Notes                                                                                   |
-| :------------------------------------- | :------------------------- | :-------------------------------------------------------------------------------------- |
-| `class="a b"` or `class='a b'`         | ``;__(`a b`)``             | quotes become backticks; `)` on the first slot after the value that is not a line break |
-| value spanning lines                   | template literal           | line breaks copied as they are, `\r` included (invariant 2)                             |
-| value with a backtick or `${`          | original quotes kept       | only on one line without a backslash, else skip `invalid-escape`                        |
-| `:class="expr"`, `v-bind:class="expr"` | `;__(expr)`                | expression copied raw; `)` replaces the closing quote                                   |
-| `class=a` (unquoted)                   | backticks around the value | needs free slots on both sides, else skip `no-room`                                     |
+| Source                                 | Virtual                    | Notes                                                                                                         |
+| :------------------------------------- | :------------------------- | :------------------------------------------------------------------------------------------------------------ |
+| `class="a b"` or `class='a b'`         | ``;__(`a b`)``             | quotes become backticks; `)` on the first free slot after the value, before the next attribute or the tag end |
+| value spanning lines                   | template literal           | line breaks copied as they are, `\r` included (invariant 2)                                                   |
+| value with a backtick or `${`          | original quotes kept       | only on one line without a backslash, else skip `invalid-escape`                                              |
+| `:class="expr"`, `v-bind:class="expr"` | `;__(expr)`                | expression copied raw; `)` replaces the closing quote                                                         |
+| `class=a` (unquoted)                   | backticks around the value | needs free slots on both sides, else skip `no-room`                                                           |
 
 Wrapper characters are placed right to left, ending just before the value, on
 slots that are not line breaks. So `class\n=\n"a"` becomes ``;__\n(\n`a`)``,
