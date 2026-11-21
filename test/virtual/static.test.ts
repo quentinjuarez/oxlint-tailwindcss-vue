@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 
+import { parseCache } from '@vue/compiler-sfc';
 import { describe, expect, it } from 'vitest';
 
 import type {
@@ -394,5 +395,17 @@ describe('virtualize: static values', () => {
     expect(checked('<template>\n<div class=flex').rewrites).toEqual([]);
     const unclosed = '<template><p class="a b">x</p>';
     expect(rewritten(unclosed, checked(unclosed))).toEqual(['class="a b"']);
+  });
+
+  it("leaves compiler-sfc's parse cache empty", () => {
+    for (const source of [
+      '<template><p class="a"></p></template>',
+      '<template lang="pug">\np(class="a")\n</template>\n',
+      '<template src="./a.html"></template>\n',
+      '<script>export default {}</script>\n',
+    ]) {
+      virtualize(source);
+      expect(parseCache.size).toBe(0);
+    }
   });
 });

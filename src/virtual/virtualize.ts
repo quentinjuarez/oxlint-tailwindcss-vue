@@ -7,7 +7,7 @@ import type {
   TemplateChildNode,
   TextNode,
 } from '@vue/compiler-core';
-import { parse } from '@vue/compiler-sfc';
+import { parse, parseCache } from '@vue/compiler-sfc';
 
 import { createAttributeMatcher } from './attributes.js';
 import { VirtualBuffer } from './buffer.js';
@@ -47,7 +47,13 @@ export function virtualize(
     notices: [],
     styleClasses: [],
   };
-  const { template } = parse(source, { filename: 'component.vue' }).descriptor;
+  const { template } = parse(source, {
+    filename: 'component.vue',
+    sourceMap: false,
+  }).descriptor;
+  // compiler-sfc keeps up to 500 parse results keyed by the whole source; each
+  // file is read once, so the cache would only hold memory.
+  parseCache.clear();
   if (!template) return result;
   const { ast } = template;
   if (template.attrs.src !== undefined || !ast) {
