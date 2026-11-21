@@ -83,11 +83,13 @@ export class VirtualBuffer {
     return true;
   }
 
-  placeAfter(from: number, text: string): boolean {
+  placeAfter(from: number, text: string, limit = this.#source.length): boolean {
     this.#requireOpen();
-    for (let index = Math.max(from, 0); index < this.#source.length; index++) {
+    const end = Math.min(limit, this.#source.length);
+    for (let index = Math.max(from, 0); index < end; index++) {
       if (!this.isFree(index)) continue;
-      if (!this.#isRunFree(index, text.length)) return false;
+      if (index + text.length > end || !this.#isRunFree(index, text.length))
+        return false;
       this.write(index, text);
       return true;
     }

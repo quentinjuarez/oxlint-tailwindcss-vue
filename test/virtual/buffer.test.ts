@@ -80,6 +80,14 @@ describe('VirtualBuffer', () => {
     }).toThrow(/out of range/);
   });
 
+  it('keeps placeAfter below an exclusive limit', () => {
+    const buffer = openBuffer('"a"\n >b');
+    expect(buffer.placeAfter(3, ')', 4)).toBe(false);
+    expect(buffer.placeAfter(3, '))', 5)).toBe(false);
+    expect(buffer.placeAfter(3, ')', 6)).toBe(true);
+    expect(buffer.toString()).toBe('   \n)  ');
+  });
+
   it('copies source text at the same indices', () => {
     const buffer = openBuffer('a.b\nc.d');
     buffer.copy(2, 7);

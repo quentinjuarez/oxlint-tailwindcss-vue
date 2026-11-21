@@ -1,0 +1,1 @@
+﻿<template>  <p class="p-1    m-1">lone carriage returns</p>  <p class="p-2">after a byte order mark</p></template>
