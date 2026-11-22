@@ -1,0 +1,17 @@
+{
+  "jsPlugins": ["oxlint-tailwindcss"],
+  "settings": { "tailwindcss": { "entryPoint": "src/style.css" } },
+  "rules": {
+    "tailwindcss/no-unknown-classes": "error",
+    "tailwindcss/no-duplicate-classes": "error",
+    "tailwindcss/no-conflicting-classes": "error",
+    "no-debugger": "error"
+  },
+  "ignorePatterns": ["dist/**"],
+  "overrides": [
+    {
+      "files": ["src/legacy/**/*.vue"],
+      "rules": { "tailwindcss/no-unknown-classes": "off" }
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{ "diagnostics": [{"message": "Unexpected token","severity": "error","filename": "src/broken.ts","labels": [{"span": {"offset": 6,"length": 1,"line": 1,"column": 7}}]},
+{"message": "Duplicate class: \"p-4\". Removing the second occurrence.","code": "tailwindcss(no-duplicate-classes)","severity": "error","filename": "src/virt.ts","labels": [{"span": {"offset": 4,"length": 35,"line": 1,"column": 5}}]},
+{"message": "\"not-a-tailwind-class\" is not a valid Tailwind class.","code": "tailwindcss(no-unknown-classes)","severity": "error","filename": "src/virt.ts","labels": [{"span": {"offset": 4,"length": 35,"line": 1,"column": 5}}]}],
+              "number_of_files": 2,
+              "number_of_rules": 3,
+              "threads_count": 10,
+              "start_time": 0.270970167
+            }
+            
