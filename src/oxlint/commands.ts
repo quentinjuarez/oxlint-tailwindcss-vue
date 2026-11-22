@@ -115,9 +115,13 @@ export async function lintVirtualFiles(
     signal?: AbortSignal;
   },
 ): Promise<OxlintReport> {
-  const relatives = options.files.map((file) =>
-    isAbsolute(file) ? relative(options.cwd, file) : file,
-  );
+  const relatives = options.files.map((file) => {
+    if (!isAbsolute(file)) return file;
+    const path = relative(options.cwd, file);
+    // oxlint 1.94 exits with "PATH must not contain .." on such an argument,
+    // and takes an absolute path outside its cwd.
+    return path.startsWith('..') ? file : path;
+  });
   const merged: OxlintReport = { diagnostics: [], number_of_files: 0 };
   for (const chunk of chunkByLength(relatives, MAX_ARGS_LENGTH)) {
     // oxlint already uses every core; chunks run one after the other.

@@ -145,15 +145,24 @@ can interfere:
 ## Running oxlint
 
 ```
-node <oxlint bin> -c <tmp>/.oxlintrc.json --format json -A all
-  --no-error-on-unmatched-pattern <virtual paths relative to the child cwd>
+node <oxlint bin> -c <tmp>/<group>/.oxlintrc.json --format json -A all
+  --no-error-on-unmatched-pattern <virtual paths>
 ```
 
 - oxlint is resolved from the user's project and spawned with
   `process.execPath`, never through a `.cmd` shim.
 - `-A all` turns the native rules off; only the Tailwind rules remain.
+- Each config group gets a folder in the temp root with its derived config.
+  A virtual file keeps its path relative to the config folder (a file outside
+  it goes under `_external/<drive>/`), and the child cwd mirrors the user's
+  cwd, so override globs (relative to the config folder) and `entryPoint`
+  mapping globs (relative to the cwd) match as in a native run. A cwd outside
+  the config folder cannot be mirrored next to its files: mapping globs
+  written for it do not match.
 - Paths are explicit, in chunks below the Windows command-line limit. A
   directory walk would be emptied by a `.gitignore` above the temp dir.
+- Paths are relative to the child cwd, or absolute when they leave it: oxlint
+  1.94 exits with "PATH must not contain .." on a relative path with `..`.
 - `--quiet`, `--max-warnings` and `--deny-warnings` are never passed to the
   child: the CLI applies them itself on the mapped results.
 - The CLI checks that `number_of_files` equals the number of paths sent.
@@ -224,8 +233,10 @@ oxlint-tailwindcss-vue [options] [paths...]
 - The temp root is `realpath(mkdtemp(realpath(os.tmpdir())/oxlint-tailwindcss-vue-))`.
 - It is removed in `finally` and on SIGINT, SIGTERM, SIGHUP and SIGBREAK, after
   the child has exited (Windows refuses to delete files still open).
-- Stale temp roots older than a day are pruned at start.
-- The plugin's own cache in the temp dir is never touched.
+- Stale temp roots older than a day are pruned at start. A temp root holds a
+  marker file, and only folders with the prefix and the marker are pruned.
+- The plugin's own cache in the temp dir is never touched (its folder,
+  `oxlint-tailwindcss-<user>`, can share the prefix on Windows).
 
 ## Fixes (0.2)
 

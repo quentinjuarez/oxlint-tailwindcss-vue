@@ -111,6 +111,7 @@ describe('real oxlint', () => {
     expect(files.toSorted()).toEqual(
       [
         join(basic, 'src/App.vue'),
+        join(basic, 'src/Broken.vue'),
         join(basic, 'src/Clean.vue'),
         join(basic, 'src/legacy/Old.vue'),
       ].toSorted(),
@@ -125,7 +126,11 @@ describe('real oxlint', () => {
       ignorePatterns: ['src/legacy/**'],
     });
     expect(files.toSorted()).toEqual(
-      [join(basic, 'src/App.vue'), join(basic, 'src/Clean.vue')].toSorted(),
+      [
+        join(basic, 'src/App.vue'),
+        join(basic, 'src/Broken.vue'),
+        join(basic, 'src/Clean.vue'),
+      ].toSorted(),
     );
   }, 60_000);
 
@@ -212,6 +217,15 @@ describe('real oxlint', () => {
     });
     expect(report.number_of_files).toBe(1);
     expect(report.diagnostics).toEqual([]);
+  }, 60_000);
+
+  it('lintVirtualFiles passes a file outside its cwd as an absolute path', async () => {
+    const report = await lintVirtualFiles(oxlint, {
+      configPath: config,
+      cwd: join(basic, 'src', 'legacy'),
+      files: [join(basic, 'src/main.ts')],
+    });
+    expect(report.number_of_files).toBe(1);
   }, 60_000);
 
   it('lintVirtualFiles throws a ToolError when aborted', async () => {
