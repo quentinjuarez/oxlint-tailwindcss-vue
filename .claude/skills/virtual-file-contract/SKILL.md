@@ -62,6 +62,7 @@ before it: `<p ui="a">` becomes ``  ;__(`a`)`` (two blanks first).
 | `template-lang`           | `<template lang>` other than `html`                                                 |
 | `template-src`            | `<template src>`                                                                    |
 | `parse-safety-net`        | Babel still fails at this rewrite after every other rule                            |
+| `sfc-parse-error`         | Vue's own parser threw on this file: nothing in it can be checked                   |
 
 ## Checked attributes
 

@@ -1,5 +1,6 @@
 import { readdirSync } from 'node:fs';
 
+import { parse, parseCache } from '@vue/compiler-sfc';
 import { describe, expect, it } from 'vitest';
 
 import type { SkipCode } from '../../src/virtual/types.js';
@@ -297,7 +298,7 @@ describe('virtualize: bound values', () => {
       'unclosed-elements.vue': [['class="p-1"', `:class="'p-2'"`], []],
     };
     expect(fixtureNames('sfc/broken')).toEqual(
-      Object.keys(expected).toSorted(),
+      [...Object.keys(expected), 'directive-without-name.vue'].toSorted(),
     );
     for (const [name, [rewrites, skips]] of Object.entries(expected)) {
       const source = fixture(`sfc/broken/${name}`);
@@ -307,6 +308,28 @@ describe('virtualize: bound values', () => {
     }
     const stray = fixture('sfc/broken/stray-end-tags.vue');
     expect(checked(stray).code).not.toContain('after-end');
+  });
+
+  it("reports sfc-parse-error when Vue's parser throws", () => {
+    const source = fixture('sfc/broken/directive-without-name.vue');
+    parse('<template><p class="p-1"></p></template>', {
+      filename: 'cached.vue',
+    });
+    expect(parseCache.size).toBeGreaterThan(0);
+    expect(virtualize(source)).toEqual({
+      code: null,
+      rewrites: [],
+      skipped: [
+        {
+          code: 'sfc-parse-error',
+          attribute: '<template>',
+          span: { start: 0, end: source.length },
+        },
+      ],
+      notices: [],
+      styleClasses: [],
+    });
+    expect(parseCache.size).toBe(0);
   });
 
   it('walks deeply nested elements without recursion', () => {

@@ -5,7 +5,7 @@ import type {
   SourceLocation,
   TemplateChildNode,
 } from '@vue/compiler-core';
-import { parse, parseCache } from '@vue/compiler-sfc';
+import { parse, parseCache, type SFCTemplateBlock } from '@vue/compiler-sfc';
 
 import { createAttributeMatcher } from './attributes.js';
 import { checkedExpression, noteUnquotedKeys, rewriteBound } from './bound.js';
@@ -36,13 +36,25 @@ export function virtualize(
     notices: [],
     styleClasses: [],
   };
-  const { template } = parse(source, {
-    filename: 'component.vue',
-    sourceMap: false,
-  }).descriptor;
-  // compiler-sfc keeps up to 500 parse results keyed by the whole source; each
-  // file is read once, so the cache would only hold memory.
-  parseCache.clear();
+  let template: SFCTemplateBlock | null;
+  try {
+    template = parse(source, {
+      filename: 'component.vue',
+      sourceMap: false,
+    }).descriptor.template;
+  } catch {
+    // compiler-core 3.5 throws on some invalid attributes, such as `v-.trim`.
+    result.skipped.push({
+      code: 'sfc-parse-error',
+      attribute: TEMPLATE_BLOCK,
+      span: { start: 0, end: source.length },
+    });
+    return result;
+  } finally {
+    // compiler-sfc keeps up to 500 parse results keyed by the whole source;
+    // each file is read once, so the cache would only hold memory.
+    parseCache.clear();
+  }
   if (!template) return result;
   const { ast } = template;
   if (template.attrs.src !== undefined || !ast) {

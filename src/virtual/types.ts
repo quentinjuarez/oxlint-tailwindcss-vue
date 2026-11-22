@@ -7,7 +7,8 @@ export type SkipCode =
   | 'template-wrapper'
   | 'template-lang'
   | 'template-src'
-  | 'parse-safety-net';
+  | 'parse-safety-net'
+  | 'sfc-parse-error';
 
 export interface SourceSpan {
   start: number;

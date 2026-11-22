@@ -105,7 +105,7 @@ Rules:
    rejects (`exp.ast === false`), invalid escape sequences, unquoted values
    that contain quotes, classes on `<template>` wrappers (`v-if`, `v-for`,
    slots), which Vue does not render, templates with a `lang` other than HTML,
-   and `<template src>`.
+   `<template src>`, and files that Vue's own parser throws on.
 6. Checked attributes: `class`, `:class`, `v-bind:class`, the class props of
    Vue's built-in components (`Transition`, `TransitionGroup`, `RouterLink`),
    and every attribute listed in the user's oxlint-tailwindcss `attributes` or
