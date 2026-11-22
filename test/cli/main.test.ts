@@ -85,6 +85,38 @@ describe('main', () => {
   );
 
   it(
+    'prints an empty json report and the notice on stderr when no file matches',
+    async () => {
+      const { code, out, err } = await run([
+        '--ignore-pattern',
+        '**/*.vue',
+        '-f',
+        'json',
+      ]);
+      expect(code).toBe(0);
+      expect(JSON.parse(out)).toEqual({ diagnostics: [], number_of_files: 0 });
+      expect(err).toBe('No .vue files to check.\n');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'prints nothing on stdout and the notice on stderr for github when no file matches',
+    async () => {
+      const { code, out, err } = await run([
+        '--ignore-pattern',
+        '**/*.vue',
+        '-f',
+        'github',
+      ]);
+      expect(code).toBe(0);
+      expect(out).toBe('');
+      expect(err).toBe('No .vue files to check.\n');
+    },
+    TIMEOUT,
+  );
+
+  it(
     'exits 2 on a missing path',
     async () => {
       const { code, err } = await run(['nope/Missing.vue']);
@@ -136,6 +168,21 @@ describe('main', () => {
       [
         'FORCE_COLOR=0 on a TTY',
         { tty: true, env: { FORCE_COLOR: '0' } },
+        false,
+      ],
+      [
+        'FORCE_COLOR=false on a TTY',
+        { tty: true, env: { FORCE_COLOR: 'false' } },
+        false,
+      ],
+      [
+        'an empty NO_COLOR on a TTY',
+        { tty: true, env: { NO_COLOR: '' } },
+        true,
+      ],
+      [
+        'FORCE_COLOR=1 with NO_COLOR',
+        { tty: true, env: { FORCE_COLOR: '1', NO_COLOR: '1' } },
         true,
       ],
       [

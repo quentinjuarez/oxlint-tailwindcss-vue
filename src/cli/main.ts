@@ -76,7 +76,20 @@ async function run(options: CliOptions, io: CliIo): Promise<number> {
     ...(io.signal === undefined ? {} : { signal: io.signal }),
   });
   if (result.files.length === 0) {
-    io.stdout.write('No .vue files to check.\n');
+    const notice = 'No .vue files to check.\n';
+    if (format === 'default') {
+      io.stdout.write(notice);
+    } else {
+      io.stdout.write(
+        formatReport(result, format, {
+          cwd: io.cwd,
+          quiet,
+          debug,
+          color: false,
+        }),
+      );
+      io.stderr.write(notice);
+    }
     return 0;
   }
   const color = format === 'default' && wantsColor(io);
@@ -92,10 +105,10 @@ async function run(options: CliOptions, io: CliIo): Promise<number> {
 
 function wantsColor({ stdout, env }: CliIo): boolean {
   const forced = env.FORCE_COLOR;
-  if (forced !== undefined && forced !== '' && forced !== '0') return true;
-  return (
-    (stdout as { isTTY?: boolean }).isTTY === true && env.NO_COLOR === undefined
-  );
+  if (forced === '0' || forced === 'false') return false;
+  if (forced !== undefined && forced !== '') return true;
+  if (env.NO_COLOR !== undefined && env.NO_COLOR !== '') return false;
+  return (stdout as { isTTY?: boolean }).isTTY === true;
 }
 
 function readVersion(): string {
