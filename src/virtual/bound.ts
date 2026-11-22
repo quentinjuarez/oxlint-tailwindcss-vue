@@ -34,7 +34,7 @@ export function rewriteBound(
   source: string,
   prop: DirectiveNode,
   exp: SimpleExpressionNode,
-): SkipCode | undefined {
+): number | SkipCode {
   if (exp.ast === false) return 'invalid-expression';
   if (exp.loc.source !== exp.content) return 'entity';
   const start = exp.loc.start.offset;
@@ -45,11 +45,12 @@ export function rewriteBound(
 }
 
 export function noteUnquotedKeys(
+  prop: DirectiveNode,
   exp: SimpleExpressionNode,
   notices: Notice[],
 ): void {
   const { ast } = exp;
-  if (!ast) return;
+  if (prop.arg?.loc.source !== 'class' || !ast) return;
   const candidates = ast.type === 'ArrayExpression' ? ast.elements : [ast];
   for (const candidate of candidates) {
     if (candidate?.type !== 'ObjectExpression') continue;

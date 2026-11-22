@@ -99,8 +99,9 @@ Rules:
    it.) A value with a backtick or `${` keeps its original quotes when
    it fits on one line without a backslash; otherwise it is skipped.
 4. The virtual file must parse as a TypeScript module. It is parsed with
-   `@babel/parser`; on an error, the rewrite at the error offset is blanked and
-   the file is parsed again.
+   `@babel/parser`; on an error, the rewrite at the error offset (or, between
+   rewrites, the last one before it) is blanked with its notices, and the file
+   is parsed again until it parses.
 5. Skipped, with a reason: values with HTML entities, expressions Vue itself
    rejects (`exp.ast === false`), invalid escape sequences, unquoted values
    that contain quotes, classes on `<template>` wrappers (`v-if`, `v-for`,

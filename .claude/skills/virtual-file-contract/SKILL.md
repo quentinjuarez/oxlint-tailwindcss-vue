@@ -79,7 +79,9 @@ before it: `<p ui="a">` becomes ``  ;__(`a`)`` (two blanks first).
   matching `attributePatterns`.
 - Unquoted object keys (`:class="{ active: x }"`) are copied, but
   oxlint-tailwindcss reads only quoted keys, so they are not checked;
-  `--debug` lists them (see the open question in docs/design.md).
+  `--debug` lists them for `:class` and `v-bind:class` only (see the open
+  question in docs/design.md). On other attributes, such as a `:ui` object,
+  keys name slots, not classes.
 - Never: dynamic arguments (`:[name]`), `v-bind="{ class }"` (0.1), other
   directives with a `class` argument (`@class`, `v-model:class`), anything
   inside `v-pre` except static attributes.
@@ -101,6 +103,12 @@ stays blank. Every other comment stays blank.
   to detect entities.
 - `prop.exp.loc` is raw without quotes; `prop.exp.content` is decoded.
   `exp.ast` is `null` for a simple identifier, `false` when Babel failed.
+- Template comments are dropped when `NODE_ENV` is `production` unless
+  `templateParseOptions: { comments: true }` is passed. A comment cut by the
+  end of the file gets a `loc` that ends 3 past the source.
+- compiler-core never resets its v-pre state when a file ends inside a v-pre
+  start tag: every later parse in the same process reads directives as plain
+  attributes.
 - `template.ast` is a ROOT node. With a `lang` other than `html` it holds one
   raw text node; with `src` there is no `ast`.
 - Use `@vue/compiler-sfc` ^3.5 from this package's dependencies, never the

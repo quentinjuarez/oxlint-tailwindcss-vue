@@ -1,4 +1,5 @@
 import type {
+  CommentNode,
   ElementNode,
   ElementTypes,
   NodeTypes,
@@ -10,6 +11,8 @@ import { parse, parseCache, type SFCTemplateBlock } from '@vue/compiler-sfc';
 import { createAttributeMatcher } from './attributes.js';
 import { checkedExpression, noteUnquotedKeys, rewriteBound } from './bound.js';
 import { VirtualBuffer } from './buffer.js';
+import { rewriteComment } from './comments.js';
+import { undoUnparsable } from './safety-net.js';
 import { checkedValue, rewriteStatic } from './static.js';
 import type {
   Rewrite,
@@ -21,9 +24,11 @@ import type {
 } from './types.js';
 
 const ELEMENT = 1 as NodeTypes.ELEMENT;
+const COMMENT = 3 as NodeTypes.COMMENT;
 const ATTRIBUTE = 6 as NodeTypes.ATTRIBUTE;
 const TEMPLATE_WRAPPER = 3 as ElementTypes.TEMPLATE;
 const TEMPLATE_BLOCK = '<template>';
+const COMMENT_ATTRIBUTE = 'comment';
 
 export function virtualize(
   source: string,
@@ -41,6 +46,9 @@ export function virtualize(
     template = parse(source, {
       filename: 'component.vue',
       sourceMap: false,
+      // compiler-core drops template comments by default when NODE_ENV is
+      // production (it then loads its prod build).
+      templateParseOptions: { comments: true },
     }).descriptor.template;
   } catch {
     // compiler-core 3.5 throws on some invalid attributes, such as `v-.trim`.
@@ -68,55 +76,96 @@ export function virtualize(
 
   const buffer = new VirtualBuffer(source);
   const isChecked = createAttributeMatcher(options);
-  forEachElement(ast.children, (element) => {
-    const isWrapper = element.tagType === TEMPLATE_WRAPPER;
-    for (const prop of element.props) {
+  const regions = new Map<number, Rewrite>();
+  const record = (
+    kind: Rewrite['kind'],
+    attribute: string,
+    loc: SourceLocation,
+    outcome: number | SkipCode,
+  ): boolean => {
+    const span = spanOf(loc);
+    if (typeof outcome === 'string') {
+      result.skipped.push({ code: outcome, attribute, span });
+      return false;
+    }
+    const rewrite = { kind, attribute, span };
+    result.rewrites.push(rewrite);
+    regions.set(outcome, rewrite);
+    return true;
+  };
+  forEachNode(ast.children, (node) => {
+    if (node.type === COMMENT) {
+      const region = rewriteComment(buffer, source, node);
+      if (region !== undefined)
+        record('comment', COMMENT_ATTRIBUTE, node.loc, region);
+      return;
+    }
+    const isWrapper = node.tagType === TEMPLATE_WRAPPER;
+    for (const prop of node.props) {
       if (prop.type === ATTRIBUTE) {
-        const value = checkedValue(prop, element.tag, isChecked);
+        const value = checkedValue(prop, node.tag, isChecked);
         if (!value) continue;
-        const code = isWrapper
+        const outcome = isWrapper
           ? 'template-wrapper'
           : rewriteStatic(buffer, source, prop, value);
-        record(result, 'static', prop.name, prop.loc, code);
+        record('static', prop.name, prop.loc, outcome);
       } else {
-        const exp = checkedExpression(prop, element.tag, isChecked);
+        const exp = checkedExpression(prop, node.tag, isChecked);
         if (!exp) continue;
-        const code = isWrapper
+        const outcome = isWrapper
           ? 'template-wrapper'
           : rewriteBound(buffer, source, prop, exp);
         // compiler-core sets rawName on every directive it parses.
-        record(result, 'bound', prop.rawName as string, prop.loc, code);
-        if (!code) noteUnquotedKeys(exp, result.notices);
+        if (record('bound', prop.rawName as string, prop.loc, outcome))
+          noteUnquotedKeys(prop, exp, result.notices);
       }
     }
   });
-  result.code = buffer.toString();
+  const { code, undone } = undoUnparsable(buffer);
+  result.code = code;
+  // Every region the buffer commits comes from a recorded rewrite.
+  recordUndone(
+    result,
+    undone.map((region) => regions.get(region) as Rewrite),
+  );
   return result;
 }
 
-function record(
+function recordUndone(
   result: VirtualizeResult,
-  kind: Rewrite['kind'],
-  attribute: string,
-  loc: SourceLocation,
-  code: SkipCode | undefined,
+  undone: readonly Rewrite[],
 ): void {
-  const span = spanOf(loc);
-  if (code) result.skipped.push({ code, attribute, span });
-  else result.rewrites.push({ kind, attribute, span });
+  if (undone.length === 0) return;
+  result.rewrites = result.rewrites.filter(
+    (rewrite) => !undone.includes(rewrite),
+  );
+  result.notices = result.notices.filter(
+    (notice) => !undone.some(({ span }) => isWithin(notice.span, span)),
+  );
+  result.skipped = [
+    ...result.skipped,
+    ...undone.map(({ attribute, span }): Skip => ({
+      code: 'parse-safety-net',
+      attribute,
+      span,
+    })),
+  ].toSorted((a, b) => a.span.start - b.span.start);
 }
 
-function forEachElement(
+function forEachNode(
   children: readonly TemplateChildNode[],
-  visit: (element: ElementNode) => void,
+  visit: (node: ElementNode | CommentNode) => void,
 ): void {
   const pending = children.toReversed();
   while (pending.length > 0) {
     const node = pending.pop() as TemplateChildNode;
-    if (node.type !== ELEMENT) continue;
-    visit(node);
-    for (let index = node.children.length - 1; index >= 0; index--) {
-      pending.push(node.children[index] as TemplateChildNode);
+    if (node.type === COMMENT) {
+      visit(node);
+    } else if (node.type === ELEMENT) {
+      visit(node);
+      for (let index = node.children.length - 1; index >= 0; index--) {
+        pending.push(node.children[index] as TemplateChildNode);
+      }
     }
   }
 }
@@ -127,4 +176,8 @@ function templateSkip(code: SkipCode, loc: SourceLocation): Skip {
 
 function spanOf(loc: SourceLocation): SourceSpan {
   return { start: loc.start.offset, end: loc.end.offset };
+}
+
+function isWithin(inner: SourceSpan, outer: SourceSpan): boolean {
+  return inner.start >= outer.start && inner.end <= outer.end;
 }

@@ -18,7 +18,7 @@ export function writeCall(
   valueStart: number,
   valueEnd: number,
   writeValue: () => void,
-): SkipCode | undefined {
+): number | SkipCode {
   buffer.begin();
   if (
     !buffer.placeCall(
@@ -32,8 +32,7 @@ export function writeCall(
     return 'no-room';
   }
   writeValue();
-  buffer.commit();
-  return undefined;
+  return buffer.commit();
 }
 
 function whitespaceStart(source: string, index: number): number {

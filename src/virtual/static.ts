@@ -34,7 +34,7 @@ export function rewriteStatic(
   source: string,
   prop: AttributeNode,
   value: TextNode,
-): SkipCode | undefined {
+): number | SkipCode {
   const start = value.loc.start.offset;
   const end = value.loc.end.offset;
   const quoted = source[start] === '"' || source[start] === "'";

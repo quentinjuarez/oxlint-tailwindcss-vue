@@ -352,18 +352,35 @@ describe('virtualize: bound values', () => {
       `<p :class="ok ? { hidden: x } : ''"></p>`,
       '<p :class="{ entity: x &amp;&amp; y }"></p>',
       '<template v-if="z" :class="{ wrapper: z }"></template>',
-      `<UiCard :ui="{ base: 'p-2' }" />`,
       '</template>',
     ].join('\n');
-    const result = checked(source, { attributes: ['ui'] });
+    const result = checked(source);
     expect(result.notices).toEqual([
       { code: 'unquoted-key', key: 'flex', span: spanOf(source, 'flex') },
       { code: 'unquoted-key', key: 'inline', span: spanOf(source, 'inline') },
-      { code: 'unquoted-key', key: 'base', span: spanOf(source, 'base') },
     ]);
     expect(result.skipped.map(({ code }) => code)).toEqual([
       'entity',
       'template-wrapper',
+    ]);
+  });
+
+  it('notes keys of class bindings only', () => {
+    const source = [
+      '<template>',
+      '<p :class="{ first: x }"></p>',
+      '<p v-bind:class="{ second: x }"></p>',
+      '<UiCard :ui="{ base: x }" />',
+      '<UiCard v-bind:ui="{ root: x }" />',
+      '<Transition :enter-active-class="{ entering: x }"></Transition>',
+      '<RouterLink :active-class="{ active: x }" />',
+      '</template>',
+    ].join('\n');
+    const result = checked(source, { attributes: ['ui'] });
+    expect(result.rewrites).toHaveLength(6);
+    expect(result.notices).toEqual([
+      { code: 'unquoted-key', key: 'first', span: spanOf(source, 'first') },
+      { code: 'unquoted-key', key: 'second', span: spanOf(source, 'second') },
     ]);
   });
 });
