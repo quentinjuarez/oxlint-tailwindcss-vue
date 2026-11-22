@@ -45,9 +45,11 @@ function compilePatterns(patterns: readonly string[]): RegExp[] {
   return compiled;
 }
 
+export type AttributeMatcher = (tag: string, name: string) => boolean;
+
 export function createAttributeMatcher(
   options: VirtualizeOptions,
-): (tag: string, name: string) => boolean {
+): AttributeMatcher {
   const userNames = new Set(withForms(options.attributes ?? []));
   const patterns = compilePatterns(options.attributePatterns ?? []);
   return (tag, name) =>

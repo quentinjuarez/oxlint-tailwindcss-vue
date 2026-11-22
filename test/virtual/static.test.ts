@@ -1,65 +1,16 @@
-import { readFileSync } from 'node:fs';
-
 import { parseCache } from '@vue/compiler-sfc';
 import { describe, expect, it } from 'vitest';
 
-import type {
-  SkipCode,
-  SourceSpan,
-  VirtualizeOptions,
-  VirtualizeResult,
-} from '../../src/virtual/types.js';
 import { virtualize } from '../../src/virtual/virtualize.js';
-import { assertContract } from '../helpers/contract.js';
-
-const TEMPLATE_OPEN = '<template>';
-
-function fixture(path: string): string {
-  return readFileSync(new URL(`../fixtures/${path}`, import.meta.url), 'utf8');
-}
-
-function checked(
-  source: string,
-  options?: VirtualizeOptions,
-): VirtualizeResult & { code: string } {
-  const result = virtualize(source, options);
-  const { code } = result;
-  if (code === null) throw new Error('no virtual file');
-  assertContract(source, code);
-  return { ...result, code };
-}
-
-function virtualBody(body: string, options?: VirtualizeOptions): string {
-  const { code } = checked(`${TEMPLATE_OPEN}${body}</template>`, options);
-  return code.slice(TEMPLATE_OPEN.length, TEMPLATE_OPEN.length + body.length);
-}
-
-function spanOf(source: string, snippet: string): SourceSpan {
-  const start = source.indexOf(snippet);
-  if (start === -1 || source.includes(snippet, start + 1)) {
-    throw new Error(`snippet is missing or not unique: ${snippet}`);
-  }
-  return { start, end: start + snippet.length };
-}
-
-function virtualOf(source: string, code: string, snippet: string): string {
-  const { start, end } = spanOf(source, snippet);
-  return code.slice(start, end);
-}
-
-function rewritten(source: string, result: VirtualizeResult): string[] {
-  return result.rewrites.map(({ span }) => source.slice(span.start, span.end));
-}
-
-function skipped(
-  source: string,
-  result: VirtualizeResult,
-): [SkipCode, string][] {
-  return result.skipped.map(({ code, span }) => [
-    code,
-    source.slice(span.start, span.end),
-  ]);
-}
+import {
+  checked,
+  fixture,
+  rewritten,
+  skipped,
+  spanOf,
+  virtualBody,
+  virtualOf,
+} from '../helpers/virtual.js';
 
 function lineStarts(text: string): number[] {
   return [...text.matchAll(/\r\n|\r|\n/g)].map(
@@ -286,9 +237,9 @@ describe('virtualize: static values', () => {
     const at = (snippet: string): string =>
       virtualOf(source, result.code, snippet);
     expect(at('"é ü \u{1F600}"')).toBe('`é ü \u{1F600}`');
-    expect(at('"p-1 m-1"')).toBe('`p-1 m-1`');
-    expect(at('" p-2 "')).toBe('` p-2 `');
-    expect(at('"p-3 m-3"')).toBe('`p-3 m-3`');
+    expect(at('"p-1\u00a0m-1"')).toBe('`p-1\u00a0m-1`');
+    expect(at('"\u00a0p-2\u00a0"')).toBe('`\u00a0p-2\u00a0`');
+    expect(at('"p-3\u2028m-3"')).toBe('`p-3\u2028m-3`');
     expect(result.rewrites).toHaveLength(4);
     expect(result.skipped).toEqual([]);
   });
