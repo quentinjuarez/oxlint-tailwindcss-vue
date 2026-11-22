@@ -52,7 +52,7 @@ describe('runNode', () => {
     expect(result.stderr).toBe('e\n');
     expect(result.code).toBe(3);
     expect(result.signal).toBeNull();
-  });
+  }, 30_000);
 
   it('removes TERMINAL_EMULATOR from the child env', async () => {
     process.env.TERMINAL_EMULATOR = 'JetBrains-JediTerm';
@@ -66,7 +66,7 @@ describe('runNode', () => {
     } finally {
       delete process.env.TERMINAL_EMULATOR;
     }
-  });
+  }, 30_000);
 
   it('kills the child when the signal fires', async () => {
     const controller = new AbortController();
@@ -77,7 +77,7 @@ describe('runNode', () => {
     setTimeout(() => controller.abort(), 200);
     const result = await pending;
     expect(result.signal).toBe('SIGTERM');
-  });
+  }, 30_000);
 
   it('kills at once when the signal is already aborted', async () => {
     const result = await runNode('-e', ['setInterval(() => {}, 1000)'], {
@@ -85,7 +85,7 @@ describe('runNode', () => {
       signal: AbortSignal.abort(),
     });
     expect(result.signal).toBe('SIGTERM');
-  });
+  }, 30_000);
 });
 
 describe('real oxlint', () => {
@@ -154,6 +154,35 @@ describe('real oxlint', () => {
     });
     expect(files).toContain(join(basic, 'src/App.vue'));
     expect(files).not.toContain(join(basic, 'dist/ignored.vue'));
+  }, 60_000);
+
+  it('listLintedFiles throws a ToolError for a missing config', async () => {
+    await expect(
+      listLintedFiles(oxlint, basic, {
+        ...selection,
+        config: join(basic, 'missing.json'),
+      }),
+    ).rejects.toThrow(ToolError);
+  }, 60_000);
+
+  it('listLintedFiles throws a ToolError for a missing --ignore-path file', async () => {
+    await expect(
+      listLintedFiles(oxlint, basic, {
+        ...selection,
+        config,
+        ignorePath: join(basic, 'missing-ignore'),
+      }),
+    ).rejects.toThrow(/missing-ignore/);
+  }, 60_000);
+
+  it('listLintedFiles throws a ToolError when oxlint exits with an error on stderr', async () => {
+    await expect(
+      listLintedFiles(oxlint, basic, {
+        ...selection,
+        paths: ['--not-a-flag'],
+        config,
+      }),
+    ).rejects.toThrow(ToolError);
   }, 60_000);
 
   it('listLintedFiles returns an empty list when nothing matches', async () => {

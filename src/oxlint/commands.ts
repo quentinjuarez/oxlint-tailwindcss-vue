@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
 
 import { ToolError } from '../errors.js';
@@ -67,10 +68,17 @@ export async function listLintedFiles(
   if (selection.noIgnore) args.push('--no-ignore');
   args.push(...selection.paths);
 
-  const { stdout, stderr } = await runNode(oxlint.bin, args, { cwd });
-  if (stdout.startsWith('Failed to parse oxlint configuration')) {
-    throw failure('list the files', stdout, stderr);
+  if (
+    selection.ignorePath !== undefined &&
+    !existsSync(resolve(cwd, selection.ignorePath))
+  ) {
+    throw new ToolError(`Ignore file not found: ${selection.ignorePath}`);
   }
+
+  // oxlint 1.94 exits 0 with an empty list for an unmatched path and for a
+  // missing --ignore-path file; every real failure exits 1.
+  const { stdout, stderr, code } = await runNode(oxlint.bin, args, { cwd });
+  if (code !== 0) throw failure('list the files', stdout, stderr);
   return stdout
     .split(/\r?\n/)
     .map((line) => line.trim())
