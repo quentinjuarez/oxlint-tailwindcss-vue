@@ -1,0 +1,16 @@
+{
+  "jsPlugins": [{ "name": "tw", "specifier": "oxlint-tailwindcss" }],
+  "settings": {
+    "tailwindcss": { "entryPoint": "src/style.css", "callees": ["cva"] }
+  },
+  "rules": {
+    "tw/no-unknown-classes": ["error", { "allowlist": ["legacy-card"] }],
+    "no-debugger": "error"
+  },
+  "overrides": [
+    {
+      "files": ["src/**/*.vue"],
+      "rules": { "tw/no-duplicate-classes": "warn" }
+    }
+  ]
+}

@@ -1,0 +1,198 @@
+import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, isAbsolute, resolve } from 'node:path';
+
+import { ToolError } from '../errors.js';
+import type { PrintedConfig } from '../oxlint/commands.js';
+
+export interface TailwindSettings {
+  attributes: string[];
+  attributePatterns: string[];
+}
+
+export interface DeriveInput {
+  printed: PrintedConfig;
+  configFile: string;
+  cwd: string;
+  files: readonly { virtualPath: string; styleClasses: readonly string[] }[];
+}
+
+const PRIVATE_CALLEE = '__';
+const TAILWIND_PLUGIN = /(^|[\\/])oxlint-tailwindcss([\\/]|$)/;
+const OFF_SEVERITIES = new Set<unknown>(['allow', 'off', 0]);
+
+type PluginEntry = string | { name: string; specifier: string };
+type Json = Record<string, unknown>;
+
+function asRecord(value: unknown): Json {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Json)
+    : {};
+}
+
+function strings(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
+}
+
+function specifierOf(entry: PluginEntry): string {
+  return typeof entry === 'string' ? entry : entry.specifier;
+}
+
+export function tailwindSettingsOf(printed: PrintedConfig): TailwindSettings {
+  const settings = asRecord(printed.settings?.['tailwindcss']);
+  return {
+    attributes: strings(settings['attributes']),
+    attributePatterns: strings(settings['attributePatterns']),
+  };
+}
+
+function findPlugin(printed: PrintedConfig): PluginEntry {
+  const entry = printed.jsPlugins?.find((plugin) =>
+    TAILWIND_PLUGIN.test(specifierOf(plugin)),
+  );
+  if (entry === undefined) {
+    throw new ToolError(
+      'oxlint-tailwindcss is not in the jsPlugins of your oxlint config.',
+      'Add "oxlint-tailwindcss" to jsPlugins in your oxlint config.',
+    );
+  }
+  return entry;
+}
+
+function resolvePluginPath(specifier: string, configFile: string): string {
+  if (isAbsolute(specifier)) return specifier;
+  if (specifier.startsWith('.')) return resolve(dirname(configFile), specifier);
+  try {
+    const require = createRequire(configFile);
+    const { tailwindcss } = require('oxlint-tailwindcss/config') as {
+      tailwindcss: () => { jsPlugins: string[] };
+    };
+    const [path] = tailwindcss().jsPlugins;
+    if (path === undefined) throw new Error('no plugin path');
+    return path;
+  } catch {
+    throw new ToolError(
+      `Cannot resolve oxlint-tailwindcss from ${dirname(configFile)}.`,
+      'Install oxlint-tailwindcss (>=1.17.2) in your project, and list it in jsPlugins.',
+    );
+  }
+}
+
+function withVueTwins(globs: readonly string[]): string[] {
+  return globs.flatMap((glob) =>
+    glob.endsWith('.vue') ? [glob, `${glob}.ts`] : [glob],
+  );
+}
+
+function isOff(value: unknown): boolean {
+  return OFF_SEVERITIES.has(Array.isArray(value) ? value[0] : value);
+}
+
+export function deriveConfig(input: DeriveInput): Record<string, unknown> {
+  const { printed, configFile, cwd, files } = input;
+  const configDir = dirname(configFile);
+  const plugin = findPlugin(printed);
+  const alias = typeof plugin === 'string' ? undefined : plugin.name;
+  const prefix = `${alias ?? 'tailwindcss'}/`;
+  const pluginPath = resolvePluginPath(specifierOf(plugin), configFile);
+
+  const absolute = (path: string): string => {
+    for (const base of [configDir, cwd]) {
+      const candidate = resolve(base, path);
+      if (existsSync(candidate)) return candidate;
+    }
+    throw new ToolError(
+      `Tailwind entry point not found: ${path}`,
+      `Checked ${resolve(configDir, path)} and ${resolve(cwd, path)}. Fix settings.tailwindcss.entryPoint (or the rule option) in your oxlint config.`,
+    );
+  };
+
+  const settings = structuredClone(asRecord(printed.settings?.['tailwindcss']));
+  const entryPoint = settings['entryPoint'];
+  if (typeof entryPoint === 'string') {
+    settings['entryPoint'] = absolute(entryPoint);
+  } else if (Array.isArray(entryPoint)) {
+    settings['entryPoint'] = entryPoint.map((mapping: unknown) => {
+      const copy = Object.assign({}, asRecord(mapping));
+      copy['files'] = withVueTwins(strings(copy['files']));
+      copy['use'] = absolute(String(copy['use']));
+      return copy;
+    });
+  }
+  const callees = strings(settings['callees']);
+  settings['callees'] = [...callees, PRIVATE_CALLEE];
+
+  const onlyTailwind = (rules: Json = {}): Json => {
+    const kept: Json = {};
+    for (const [name, value] of Object.entries(rules)) {
+      if (!name.startsWith(prefix)) continue;
+      if (Array.isArray(value)) {
+        const [severity, options, ...rest] = value as unknown[];
+        const optionBag = asRecord(options);
+        kept[name] =
+          typeof optionBag['entryPoint'] === 'string'
+            ? [
+                severity,
+                { ...optionBag, entryPoint: absolute(optionBag['entryPoint']) },
+                ...rest,
+              ]
+            : value;
+      } else {
+        kept[name] = value;
+      }
+    }
+    return kept;
+  };
+
+  const rules = onlyTailwind(printed.rules);
+  const unknownClasses = `${prefix}no-unknown-classes`;
+  const base = rules[unknownClasses];
+  const allowlistOverrides =
+    base === undefined || isOff(base)
+      ? []
+      : files
+          .filter((file) => file.styleClasses.length > 0)
+          .map((file) => {
+            const [severity, options, ...rest] = Array.isArray(base)
+              ? (base as unknown[])
+              : [base];
+            const optionBag = asRecord(options);
+            const allowlist = [
+              ...new Set([
+                ...strings(optionBag['allowlist']),
+                ...file.styleClasses,
+              ]),
+            ];
+            return {
+              files: [file.virtualPath],
+              rules: {
+                [unknownClasses]: [
+                  severity,
+                  { ...optionBag, allowlist },
+                  ...rest,
+                ],
+              },
+            };
+          });
+
+  const userOverrides = (printed.overrides ?? [])
+    .map((override) => ({
+      files: withVueTwins(override.files),
+      rules: onlyTailwind(override.rules),
+    }))
+    .filter((override) => Object.keys(override.rules).length > 0);
+
+  return {
+    plugins: [],
+    categories: {},
+    jsPlugins: [
+      alias === undefined ? pluginPath : { name: alias, specifier: pluginPath },
+    ],
+    settings: { tailwindcss: settings },
+    rules,
+    overrides: [...allowlistOverrides, ...userOverrides],
+    ignorePatterns: [],
+  };
+}
