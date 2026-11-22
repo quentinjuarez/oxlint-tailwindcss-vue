@@ -6,7 +6,12 @@ import type {
   SourceLocation,
   TemplateChildNode,
 } from '@vue/compiler-core';
-import { parse, parseCache, type SFCTemplateBlock } from '@vue/compiler-sfc';
+import {
+  parse,
+  parseCache,
+  type SFCStyleBlock,
+  type SFCTemplateBlock,
+} from '@vue/compiler-sfc';
 
 import { createAttributeMatcher } from './attributes.js';
 import { checkedExpression, noteUnquotedKeys, rewriteBound } from './bound.js';
@@ -14,6 +19,7 @@ import { VirtualBuffer } from './buffer.js';
 import { rewriteComment } from './comments.js';
 import { undoUnparsable } from './safety-net.js';
 import { checkedValue, rewriteStatic } from './static.js';
+import { collectStyleClasses } from './style-classes.js';
 import type {
   Rewrite,
   Skip,
@@ -47,14 +53,17 @@ export function virtualize(
     return result;
   }
   let template: SFCTemplateBlock | null;
+  let styles: SFCStyleBlock[];
   try {
-    template = parse(source, {
+    const { descriptor } = parse(source, {
       filename: 'component.vue',
       sourceMap: false,
       // compiler-core drops template comments by default when NODE_ENV is
       // production (it then loads its prod build).
       templateParseOptions: { comments: true },
-    }).descriptor.template;
+    });
+    template = descriptor.template;
+    styles = descriptor.styles;
   } catch {
     // compiler-core 3.5 throws on some invalid attributes, such as `v-.trim`.
     result.skipped.push(unparsedFile(source));
@@ -64,6 +73,17 @@ export function virtualize(
     // each file is read once, so the cache would only hold memory.
     parseCache.clear();
   }
+  result.styleClasses = [
+    ...new Set(
+      styles.flatMap(({ content, lang, module }) =>
+        collectStyleClasses(
+          content,
+          lang,
+          module !== undefined && module !== false,
+        ),
+      ),
+    ),
+  ].toSorted();
   if (!template) return result;
   const { ast } = template;
   if (template.attrs.src !== undefined || !ast) {
