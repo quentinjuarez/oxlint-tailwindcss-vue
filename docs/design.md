@@ -267,6 +267,29 @@ the new value contains its quote character, a backslash, a backtick or `${`.
 - **Acceptance** on a real app before each release (paint-emoji: 93 files).
 - Coverage thresholds: 95% statements, functions and lines, 90% branches.
 
+## Acceptance of 0.1
+
+Run on 2026-11-22 from the root of paint-emoji (a05849c), read-only, with
+oxlint-tailwindcss-vue 0.1.0 built from 604911a, oxlint 1.94.0,
+oxlint-tailwindcss 1.17.2, tailwindcss 4.3.5, Vue 3.5.44, @vue/compiler-sfc
+3.5.46 and Node 26.13.1, on macOS 27.2 with an Apple M4 and 16 GB of RAM:
+
+- 93 `.vue` files, 621 class attributes (577 static, 44 bound), no skipped
+  attribute and no `unquoted-key` notice.
+- The 8 findings of the spike, at the same lines and columns, in the
+  `default`, `json` and `github` formats (exit 1), and no false positive. The
+  20 unknown-class reports of the spike (`mat`, `checker`, `sheet-fade` and
+  others) are classes each component defines in its own `<style>`; the
+  per-file allowlist removes them.
+- 0.63 to 0.93 s wall clock over six default runs (0.93 s for the first),
+  against 0.45 s for the native oxlint run, which reports no diagnostic on its
+  386 files.
+- The README example (`test/fixtures/projects/readme-example`) prints the same
+  output from the packed tarball installed with npm 11.20.0, pnpm 9.15.0 and
+  Yarn 3.8.6 with `nodeLinker: node-modules`, and through lint-staged 17.6.2
+  with npm. Under Yarn Plug'n'Play, oxlint cannot load oxlint-tailwindcss and
+  oxlint-tailwindcss-vue exits 2 ("oxlint was not found in the project").
+
 ## Requirements
 
 - Node 22.12.0 or newer.
@@ -303,4 +326,5 @@ and 0.1 has to choose between documenting them and working around them:
    need a second virtual pass where each key is its own literal at its offset.
 
 Recommendation: document both in 0.1 (README Limitations, and a `--debug`
-note for unquoted keys), and work on them after 0.1.
+note for unquoted keys), and work on them after 0.1. 0.1 follows it: both are
+in the README Limitations, and `--debug` prints an `unquoted-key` notice.
