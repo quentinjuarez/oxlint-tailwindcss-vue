@@ -1,5 +1,11 @@
 export { lint } from './lint.js';
-export type { FileReport, Finding, LintOptions, LintResult } from './lint.js';
+export type {
+  FileReport,
+  Finding,
+  LintOptions,
+  LintResult,
+  Located,
+} from './lint.js';
 export type { Position } from './positions.js';
 export type {
   Notice,

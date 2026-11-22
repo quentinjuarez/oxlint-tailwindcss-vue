@@ -413,6 +413,8 @@ describe('lint on other projects', () => {
         'src/style.css': '@import "tailwindcss";\n',
         'src/Checked.vue':
           '<template>\n  <p class="unknown-checked"></p>\n</template>\n',
+        'src/Keys.vue':
+          '<template>\n  <p>\u{1F600} <b :class="{ active: on }"></b></p>\n</template>\n',
         'src/NoTemplate.vue':
           '<script setup lang="ts">\nconst a = 1;\n</script>\n',
         'src/Pug.vue': '<template lang="pug">\n  p.unknown-pug\n</template>\n',
@@ -433,10 +435,27 @@ describe('lint on other projects', () => {
       expect(result.findings).toHaveLength(1);
       expect(reportOf('Unparsable.vue')).toMatchObject({
         notChecked: 'Vue could not parse this file.',
-        skipped: [{ code: 'sfc-parse-error', attribute: '<template>' }],
+        skipped: [
+          {
+            code: 'sfc-parse-error',
+            attribute: '<template>',
+            line: 1,
+            column: 1,
+          },
+        ],
       });
+      expect(reportOf('Keys.vue')?.notices).toMatchObject([
+        { code: 'unquoted-key', key: 'active', line: 2, column: 22 },
+      ]);
       expect(reportOf('Pug.vue')).toMatchObject({
-        skipped: [{ code: 'template-lang', attribute: '<template>' }],
+        skipped: [
+          {
+            code: 'template-lang',
+            attribute: '<template>',
+            line: 1,
+            column: 22,
+          },
+        ],
       });
       expect(reportOf('Pug.vue')).not.toHaveProperty('notChecked');
       expect(reportOf('NoTemplate.vue')).toEqual({

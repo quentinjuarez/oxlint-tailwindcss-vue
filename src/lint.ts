@@ -49,10 +49,15 @@ export interface Finding {
   end: Position;
 }
 
+export interface Located {
+  line: number;
+  column: number;
+}
+
 export interface FileReport {
   file: string;
-  skipped: Skip[];
-  notices: Notice[];
+  skipped: (Skip & Located)[];
+  notices: (Notice & Located)[];
   notChecked?: string;
 }
 
@@ -174,7 +179,16 @@ async function lintGroup(group: GroupRun): Promise<LintResult> {
       source,
       settings,
     );
-    const report: FileReport = { file, skipped, notices };
+    const locate = locator(source);
+    const report: FileReport = {
+      file,
+      skipped: skipped.map((skip) =>
+        Object.assign({}, skip, locate(skip.span.start)),
+      ),
+      notices: notices.map((notice) =>
+        Object.assign({}, notice, locate(notice.span.start)),
+      ),
+    };
     files.push(report);
     if (code === null) {
       if (skipped.some((skip) => skip.code === 'sfc-parse-error')) {
@@ -216,6 +230,24 @@ async function lintGroup(group: GroupRun): Promise<LintResult> {
       files: sources,
     }),
     files,
+  };
+}
+
+function locator(source: string): (offset: number) => Located {
+  const lineStarts = [0];
+  for (let index = 0; index < source.length; index++) {
+    const code = source.charCodeAt(index);
+    if (code === 10 || (code === 13 && source.charCodeAt(index + 1) !== 10)) {
+      lineStarts.push(index + 1);
+    }
+  }
+  return (offset) => {
+    let line = lineStarts.findLastIndex((start) => start <= offset);
+    line = Math.max(line, 0);
+    return {
+      line: line + 1,
+      column: offset - (lineStarts[line] as number) + 1,
+    };
   };
 }
 
