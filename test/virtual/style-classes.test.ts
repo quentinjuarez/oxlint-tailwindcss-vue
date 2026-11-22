@@ -141,6 +141,20 @@ describe('collectStyleClasses', () => {
     ).toEqual(['tab-', 'tab-4']);
   });
 
+  it('reads a quoted url() to its end even when it contains a parenthesis', () => {
+    expect(
+      css(
+        `.a{background:url("data:image/svg+xml,%3Csvg fill='rgb(0,0,0)'/%3E")}.b{}.c{}`,
+      ),
+    ).toEqual(['a', 'b', 'c']);
+    expect(css(`.a{background:url('data:x,"rgb(0,0,0)"')}.b{}.c{}`)).toEqual([
+      'a',
+      'b',
+      'c',
+    ]);
+    expect(css('.a{background:url( a.png )}.b{}')).toEqual(['a', 'b']);
+  });
+
   it('survives unterminated input', () => {
     expect(css('.a { content: "open')).toEqual(['a']);
     expect(css('.a /* open')).toEqual([]);

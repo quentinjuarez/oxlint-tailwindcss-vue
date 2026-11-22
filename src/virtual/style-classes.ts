@@ -65,7 +65,7 @@ export function collectStyleClasses(
       /^url\(/i.test(text.slice(i, i + 4)) &&
       !/[\w-]/.test(text.charAt(i - 1))
     ) {
-      const end = text.indexOf(')', i);
+      const end = text.indexOf(')', afterQuotedUrl(text, i + 4));
       i = end < 0 ? text.length : end + 1;
       prelude += ' ';
     } else if (c === '{') {
@@ -82,6 +82,17 @@ export function collectStyleClasses(
     }
   }
   return [...names].toSorted();
+}
+
+function afterQuotedUrl(text: string, from: number): number {
+  let start = from;
+  while (/\s/.test(text.charAt(start))) start++;
+  const quote = text.charAt(start);
+  if (quote !== '"' && quote !== "'") return from;
+  let end = start + 1;
+  while (end < text.length && text.charAt(end) !== quote)
+    end += text.charAt(end) === '\\' ? 2 : 1;
+  return end + 1;
 }
 
 function openBlock(
