@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
@@ -148,6 +148,31 @@ function vendorProject(rule: 'crash' | 'hang'): string {
     'oxlint-tailwindcss/index.mjs': vendorPlugin,
     'src/App.vue': '<template>\n  <p class="p-2">vendor</p>\n</template>\n',
   });
+}
+
+function overrideProject(files: string[]): string {
+  return project({
+    '.oxlintrc.json': JSON.stringify({
+      jsPlugins: ['oxlint-tailwindcss'],
+      settings: { tailwindcss: { entryPoint: 'src/style.css' } },
+      rules: { 'tailwindcss/no-unknown-classes': 'error' },
+      overrides: [
+        { files, rules: { 'tailwindcss/no-unknown-classes': 'off' } },
+      ],
+    }),
+    'src/style.css': '@import "tailwindcss";\n',
+    'src/App.vue': '<template>\n  <p class="unknown-app"></p>\n</template>\n',
+    'src/legacy/Old.vue':
+      '<template>\n  <p class="unknown-old"></p>\n</template>\n',
+  });
+}
+
+async function reportedFiles(overrideFiles: string[]): Promise<string[]> {
+  const dir = overrideProject(overrideFiles);
+  const result = await lint({ cwd: dir });
+  return result.findings.map(({ file }) =>
+    relative(dir, file).split(sep).join('/'),
+  );
 }
 
 function located(result: LintResult, file: string) {
@@ -431,6 +456,53 @@ describe('lint on other projects', () => {
         files: [],
       });
       expect(createTempRoot).not.toHaveBeenCalled();
+    },
+    TIMEOUT,
+  );
+});
+
+describe('user globs', () => {
+  it(
+    'keeps an override on **/*.ts away from the templates',
+    async () => {
+      expect(await reportedFiles(['**/*.ts'])).toEqual([
+        'src/App.vue',
+        'src/legacy/Old.vue',
+      ]);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'applies an override on **/*.{js,vue} to the templates',
+    async () => {
+      expect(await reportedFiles(['**/*.{js,vue}'])).toEqual([]);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'applies an override on src/legacy/** to the templates below it',
+    async () => {
+      expect(await reportedFiles(['src/legacy/**'])).toEqual(['src/App.vue']);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'picks the entry point of the first matching mapping glob',
+    async () => {
+      const mapping = join(projects, 'mapping');
+      const result = await lint({ cwd: mapping });
+      expect(located(result, join(mapping, 'src', 'App.vue'))).toEqual([
+        {
+          rule: 'tailwindcss/no-unknown-classes',
+          severity: 'error',
+          line: 2,
+          column: 14,
+        },
+      ]);
+      expect(result.findings).toHaveLength(1);
     },
     TIMEOUT,
   );

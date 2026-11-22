@@ -1,3 +1,3 @@
 <template>
-  <div class="p-2"></div>
+  <div class="p-2 legacy-only"></div>
 </template>

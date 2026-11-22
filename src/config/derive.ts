@@ -87,10 +87,16 @@ function resolvePluginPath(specifier: string, configFile: string): string {
   }
 }
 
-function withVueTwins(globs: readonly string[]): string[] {
-  return globs.flatMap((glob) =>
-    glob.endsWith('.vue') ? [glob, `${glob}.ts`] : [glob],
-  );
+function virtualGlob(glob: string): string {
+  // oxlint 1.94 stops recursing on a final `**` followed by `.ts`
+  // (`src/legacy/**.ts` misses `src/legacy/x/Deep.vue.ts`).
+  return glob.endsWith('**') || glob.endsWith('/')
+    ? `${glob}/*.ts`
+    : `${glob}.ts`;
+}
+
+function globsOf(value: unknown): string[] {
+  return typeof value === 'string' ? [value] : strings(value);
 }
 
 function escapeGlob(path: string): string {
@@ -125,7 +131,7 @@ export function deriveConfig(input: DeriveInput): Record<string, unknown> {
     if (!Array.isArray(entryPoint)) return entryPoint;
     return entryPoint.map((mapping: unknown) => {
       const copy = Object.assign({}, asRecord(mapping));
-      copy['files'] = withVueTwins(strings(copy['files']));
+      copy['files'] = globsOf(copy['files']).map(virtualGlob);
       copy['use'] = absolute(String(copy['use']));
       return copy;
     });
@@ -196,7 +202,7 @@ export function deriveConfig(input: DeriveInput): Record<string, unknown> {
 
   const userOverrides = (printed.overrides ?? [])
     .map((override) => ({
-      files: withVueTwins(override.files),
+      files: override.files.map(virtualGlob),
       rules: onlyTailwind(override.rules),
     }))
     .filter((override) => Object.keys(override.rules).length > 0);

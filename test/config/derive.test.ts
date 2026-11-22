@@ -96,11 +96,11 @@ describe('deriveConfig', () => {
     const dirMapping = join(projects, 'mapping');
     expect(mapping.settings.tailwindcss.entryPoint).toEqual([
       {
-        files: ['src/legacy/**/*.vue', 'src/legacy/**/*.vue.ts'],
+        files: ['src/legacy/**/*.vue.ts'],
         use: join(dirMapping, 'src', 'legacy.css'),
       },
       {
-        files: ['src/**/*.vue', 'src/**/*.vue.ts', 'src/**/*.ts'],
+        files: ['src/**/*.vue.ts', 'src/**/*.ts.ts'],
         use: join(dirMapping, 'src', 'style.css'),
       },
     ]);
@@ -132,7 +132,7 @@ describe('deriveConfig', () => {
         },
       },
       {
-        files: ['src/**/*.vue', 'src/**/*.vue.ts'],
+        files: ['src/**/*.vue.ts'],
         rules: { 'tw/no-duplicate-classes': 'warn' },
       },
     ]);
@@ -146,9 +146,58 @@ describe('deriveConfig', () => {
         'tailwindcss/no-unknown-classes': ['deny', { allowlist: ['card'] }],
       },
     });
-    expect(basic.overrides[1].files).toEqual([
-      'src/legacy/**/*.vue',
-      'src/legacy/**/*.vue.ts',
+    expect(basic.overrides[1].files).toEqual(['src/legacy/**/*.vue.ts']);
+  });
+
+  it('appends .ts to every user glob, or /*.ts after a final ** or /', () => {
+    const dir = join(projects, 'basic');
+    const style = join(dir, 'src', 'style.css');
+    const derived = deriveConfig({
+      printed: {
+        jsPlugins: ['oxlint-tailwindcss'],
+        settings: {
+          tailwindcss: {
+            entryPoint: [
+              { files: ['src/**/*.{vue,ts}'], use: 'src/style.css' },
+              { files: 'src/legacy/**', use: 'src/style.css' },
+            ],
+          },
+        },
+        rules: { 'tailwindcss/no-unknown-classes': 'deny' },
+        overrides: [
+          {
+            files: [
+              'src/**/*.vue',
+              '**/*.{js,vue}',
+              '**/*.ts',
+              'src/legacy/**',
+              'src/old/',
+              '**',
+            ],
+            rules: { 'tailwindcss/no-unknown-classes': 'off' },
+          },
+        ],
+      },
+      configFile: join(dir, '.oxlintrc.json'),
+      cwd: dir,
+      files: [],
+    }) as Record<string, any>;
+    expect(derived.overrides).toEqual([
+      {
+        files: [
+          'src/**/*.vue.ts',
+          '**/*.{js,vue}.ts',
+          '**/*.ts.ts',
+          'src/legacy/**/*.ts',
+          'src/old//*.ts',
+          '**/*.ts',
+        ],
+        rules: { 'tailwindcss/no-unknown-classes': 'off' },
+      },
+    ]);
+    expect(derived.settings.tailwindcss.entryPoint).toEqual([
+      { files: ['src/**/*.{vue,ts}.ts'], use: style },
+      { files: ['src/legacy/**/*.ts'], use: style },
     ]);
   });
 
@@ -309,7 +358,7 @@ describe('deriveConfig on awkward input', () => {
         {
           entryPoint: [
             {
-              files: ['src/**/*.vue', 'src/**/*.vue.ts'],
+              files: ['src/**/*.vue.ts'],
               use: join(dir, 'src', 'style.css'),
             },
           ],

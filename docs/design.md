@@ -137,8 +137,12 @@ can interfere:
   paths made absolute.
 - `overrides`: first, one per file with the classes from its `<style>` blocks
   added to `no-unknown-classes`' `allowlist`; then the user's overrides reduced
-  to the Tailwind rules, with every `.vue` glob duplicated as `.vue.ts`. The
-  user's overrides come last so they win.
+  to the Tailwind rules. The user's overrides come last so they win.
+- Every user glob, in override `files` and in `entryPoint` mapping `files`,
+  gets `.ts` appended, or `/*.ts` after a final `**` or `/` (oxlint does not
+  recurse on `**.ts`). Only virtual files are linted, and the suffix keeps
+  exactly the `.vue` files the glob matched: `**/*.ts` stays away from
+  templates, `**/*.{js,vue}` and `src/legacy/**` reach them.
 
 `extends` is not used: it drops `settings` and `ignorePatterns`.
 
