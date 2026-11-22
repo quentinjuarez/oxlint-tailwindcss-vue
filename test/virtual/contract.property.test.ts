@@ -7,12 +7,18 @@ import { parse, parseCache } from '@vue/compiler-sfc';
 import * as fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import type { Rewrite, SourceSpan } from '../../src/virtual/types.js';
-import { checked } from '../helpers/virtual.js';
+import type {
+  Rewrite,
+  SourceSpan,
+  VirtualizeResult,
+} from '../../src/virtual/types.js';
+import { virtualize } from '../../src/virtual/virtualize.js';
+import { assertContract } from '../helpers/contract.js';
 
 const SEED = 20_261_122;
 const RUNS = 500;
 const OPTIONS = { attributes: ['ui'] };
+const CANARY = '<template><p :class="x"></p></template>';
 
 const ELEMENT = 1 as NodeTypes.ELEMENT;
 const COMMENT = 3 as NodeTypes.COMMENT;
@@ -153,14 +159,12 @@ const attribute = fc.oneof(
       expression,
     ),
   },
-  // No v-pre: compiler-core 3.5 keeps its v-pre state after a file that ends
-  // inside a v-pre start tag (its reset() skips inVPre), so every later parse
-  // in the process would read directives as attributes.
   fc.constantFrom(
     'class',
     ':class',
     'v-if="ok"',
     'v-for="item in items"',
+    'v-pre',
     '#default',
     'disabled',
   ),
@@ -339,9 +343,38 @@ function wrapperZone(source: string, { kind, span }: Rewrite): SourceSpan {
   return { start, end: source[end] === '>' ? end + 1 : end };
 }
 
+function expectCutInsideVPreTag(
+  source: string,
+  result: VirtualizeResult,
+): void {
+  expect(source).toContain('v-pre');
+  expect(result).toEqual({
+    code: null,
+    rewrites: [],
+    skipped: [
+      {
+        code: 'sfc-parse-error',
+        attribute: '<template>',
+        span: { start: 0, end: source.length },
+      },
+    ],
+    notices: [],
+    styleClasses: [],
+  });
+}
+
 function checkTemplate(source: string): void {
-  const result = checked(source, OPTIONS);
+  const result = virtualize(source, OPTIONS);
+  expect(
+    virtualize(CANARY).rewrites.map(({ kind }) => kind),
+    'a later file lost its bound attributes',
+  ).toEqual(['bound']);
   const { code } = result;
+  if (code === null) {
+    expectCutInsideVPreTag(source, result);
+    return;
+  }
+  assertContract(source, code);
   const expected = expectedRecords(source);
   expect(sortedSpans([...result.rewrites, ...result.skipped])).toEqual(
     sortedSpans(expected),

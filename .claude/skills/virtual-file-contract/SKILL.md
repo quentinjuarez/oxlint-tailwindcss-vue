@@ -51,18 +51,18 @@ before it: `<p ui="a">` becomes ``  ;__(`a`)`` (two blanks first).
 
 ## Skips (stable reason codes, shown by `--debug` and asserted in tests)
 
-| Code                      | When                                                                                |
-| :------------------------ | :---------------------------------------------------------------------------------- |
-| `entity`                  | the raw value differs from Vue's decoded value (`&amp;`, `&quot;`, `&#39;`)         |
-| `invalid-expression`      | Vue rejects the expression (`exp.ast === false`)                                    |
-| `invalid-escape`          | a backslash sequence that is invalid in a template literal (`\201C`)                |
-| `quote-in-unquoted-value` | an unquoted value that contains a quote                                             |
-| `no-room`                 | not enough free slots for the wrapper                                               |
-| `template-wrapper`        | a class on `<template v-if>`, `v-for` or a slot (tagType 3): Vue does not render it |
-| `template-lang`           | `<template lang>` other than `html`                                                 |
-| `template-src`            | `<template src>`                                                                    |
-| `parse-safety-net`        | Babel still fails at this rewrite after every other rule                            |
-| `sfc-parse-error`         | Vue's own parser threw on this file: nothing in it can be checked                   |
+| Code                      | When                                                                                                                            |
+| :------------------------ | :------------------------------------------------------------------------------------------------------------------------------ |
+| `entity`                  | the raw value differs from Vue's decoded value (`&amp;`, `&quot;`, `&#39;`)                                                     |
+| `invalid-expression`      | Vue rejects the expression (`exp.ast === false`)                                                                                |
+| `invalid-escape`          | a backslash sequence that is invalid in a template literal (`\201C`)                                                            |
+| `quote-in-unquoted-value` | an unquoted value that contains a quote                                                                                         |
+| `no-room`                 | not enough free slots for the wrapper                                                                                           |
+| `template-wrapper`        | a class on `<template v-if>`, `v-for` or a slot (tagType 3): Vue does not render it                                             |
+| `template-lang`           | `<template lang>` other than `html`                                                                                             |
+| `template-src`            | `<template src>`                                                                                                                |
+| `parse-safety-net`        | Babel still fails at this rewrite after every other rule                                                                        |
+| `sfc-parse-error`         | Vue's own parser threw on this file, or the file ends inside the opening tag of a `v-pre` element: nothing in it can be checked |
 
 ## Checked attributes
 
@@ -106,9 +106,13 @@ stays blank. Every other comment stays blank.
 - Template comments are dropped when `NODE_ENV` is `production` unless
   `templateParseOptions: { comments: true }` is passed. A comment cut by the
   end of the file gets a `loc` that ends 3 past the source.
-- compiler-core never resets its v-pre state when a file ends inside a v-pre
-  start tag: every later parse in the same process reads directives as plain
-  attributes.
+- compiler-core never resets its v-pre state when a file ends inside the
+  opening tag that carries `v-pre` (after the whole name: whitespace, `=`,
+  `:`, `.` or `/`): every later parse in the process would read directives as
+  plain attributes. So `virtualize` first parses a file that contains `v-pre`
+  with a suffix that ends any open tag (that parse closes the pending v-pre
+  itself), reads from Vue's errors whether the file ends inside that tag, and
+  then reports `sfc-parse-error` without ever parsing the file as it is.
 - `template.ast` is a ROOT node. With a `lang` other than `html` it holds one
   raw text node; with `src` there is no `ast`.
 - Use `@vue/compiler-sfc` ^3.5 from this package's dependencies, never the

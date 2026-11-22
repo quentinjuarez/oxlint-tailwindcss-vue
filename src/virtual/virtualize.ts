@@ -22,6 +22,7 @@ import type {
   VirtualizeOptions,
   VirtualizeResult,
 } from './types.js';
+import { endsInsideVPreTag } from './vpre-guard.js';
 
 const ELEMENT = 1 as NodeTypes.ELEMENT;
 const COMMENT = 3 as NodeTypes.COMMENT;
@@ -41,6 +42,10 @@ export function virtualize(
     notices: [],
     styleClasses: [],
   };
+  if (endsInsideVPreTag(source)) {
+    result.skipped.push(unparsedFile(source));
+    return result;
+  }
   let template: SFCTemplateBlock | null;
   try {
     template = parse(source, {
@@ -52,11 +57,7 @@ export function virtualize(
     }).descriptor.template;
   } catch {
     // compiler-core 3.5 throws on some invalid attributes, such as `v-.trim`.
-    result.skipped.push({
-      code: 'sfc-parse-error',
-      attribute: TEMPLATE_BLOCK,
-      span: { start: 0, end: source.length },
-    });
+    result.skipped.push(unparsedFile(source));
     return result;
   } finally {
     // compiler-sfc keeps up to 500 parse results keyed by the whole source;
@@ -168,6 +169,14 @@ function forEachNode(
       }
     }
   }
+}
+
+function unparsedFile(source: string): Skip {
+  return {
+    code: 'sfc-parse-error',
+    attribute: TEMPLATE_BLOCK,
+    span: { start: 0, end: source.length },
+  };
 }
 
 function templateSkip(code: SkipCode, loc: SourceLocation): Skip {
