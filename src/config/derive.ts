@@ -49,9 +49,16 @@ export function tailwindSettingsOf(printed: PrintedConfig): TailwindSettings {
 }
 
 function findPlugin(printed: PrintedConfig): PluginEntry {
-  const entry = printed.jsPlugins?.find((plugin) =>
+  const entries = (printed.jsPlugins ?? []).filter((plugin) =>
     TAILWIND_PLUGIN.test(specifierOf(plugin)),
   );
+  const [entry] = entries;
+  if (entries.length > 1) {
+    throw new ToolError(
+      `oxlint-tailwindcss is listed ${entries.length} times in jsPlugins: ${entries.map((plugin) => JSON.stringify(plugin)).join(', ')}`,
+      'Keep one jsPlugins entry for oxlint-tailwindcss in your oxlint config.',
+    );
+  }
   if (entry === undefined) {
     throw new ToolError(
       'oxlint-tailwindcss is not in the jsPlugins of your oxlint config.',
@@ -86,6 +93,10 @@ function withVueTwins(globs: readonly string[]): string[] {
   );
 }
 
+function escapeGlob(path: string): string {
+  return path.replaceAll(/[\\[\](){}!*?]/g, String.raw`\$&`);
+}
+
 function isOff(value: unknown): boolean {
   return OFF_SEVERITIES.has(Array.isArray(value) ? value[0] : value);
 }
@@ -109,17 +120,20 @@ export function deriveConfig(input: DeriveInput): Record<string, unknown> {
     );
   };
 
-  const settings = structuredClone(asRecord(printed.settings?.['tailwindcss']));
-  const entryPoint = settings['entryPoint'];
-  if (typeof entryPoint === 'string') {
-    settings['entryPoint'] = absolute(entryPoint);
-  } else if (Array.isArray(entryPoint)) {
-    settings['entryPoint'] = entryPoint.map((mapping: unknown) => {
+  const mapEntryPoint = (entryPoint: unknown): unknown => {
+    if (typeof entryPoint === 'string') return absolute(entryPoint);
+    if (!Array.isArray(entryPoint)) return entryPoint;
+    return entryPoint.map((mapping: unknown) => {
       const copy = Object.assign({}, asRecord(mapping));
       copy['files'] = withVueTwins(strings(copy['files']));
       copy['use'] = absolute(String(copy['use']));
       return copy;
     });
+  };
+
+  const settings = structuredClone(asRecord(printed.settings?.['tailwindcss']));
+  if (settings['entryPoint'] !== undefined) {
+    settings['entryPoint'] = mapEntryPoint(settings['entryPoint']);
   }
   const callees = strings(settings['callees']);
   settings['callees'] = [...callees, PRIVATE_CALLEE];
@@ -132,13 +146,16 @@ export function deriveConfig(input: DeriveInput): Record<string, unknown> {
         const [severity, options, ...rest] = value as unknown[];
         const optionBag = asRecord(options);
         kept[name] =
-          typeof optionBag['entryPoint'] === 'string'
-            ? [
+          optionBag['entryPoint'] === undefined
+            ? value
+            : [
                 severity,
-                { ...optionBag, entryPoint: absolute(optionBag['entryPoint']) },
+                {
+                  ...optionBag,
+                  entryPoint: mapEntryPoint(optionBag['entryPoint']),
+                },
                 ...rest,
-              ]
-            : value;
+              ];
       } else {
         kept[name] = value;
       }
@@ -166,7 +183,7 @@ export function deriveConfig(input: DeriveInput): Record<string, unknown> {
               ]),
             ];
             return {
-              files: [file.virtualPath],
+              files: [escapeGlob(file.virtualPath)],
               rules: {
                 [unknownClasses]: [
                   severity,

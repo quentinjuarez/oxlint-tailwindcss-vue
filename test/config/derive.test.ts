@@ -1,3 +1,11 @@
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -9,7 +17,7 @@ import {
   type DeriveInput,
 } from '../../src/config/derive.js';
 import { ToolError } from '../../src/errors.js';
-import { printConfig } from '../../src/oxlint/commands.js';
+import { lintVirtualFiles, printConfig } from '../../src/oxlint/commands.js';
 import { resolveOxlint } from '../../src/oxlint/resolve.js';
 
 const projects = fileURLToPath(
@@ -215,6 +223,132 @@ describe('deriveConfig', () => {
     expect((derived.settings as any).tailwindcss.entryPoint).toBe(
       join(dir, 'src', 'style.css'),
     );
+  });
+});
+
+describe('deriveConfig on awkward input', () => {
+  const dir = join(projects, 'basic');
+  const configFile = join(dir, '.oxlintrc.json');
+  const jsPlugins = ['oxlint-tailwindcss'];
+
+  it('escapes glob metacharacters of virtual paths', () => {
+    const rules = { 'tailwindcss/no-unknown-classes': 'deny' };
+    const derived = deriveConfig({
+      printed: { jsPlugins, rules },
+      configFile,
+      cwd: dir,
+      files: [
+        { virtualPath: 'pages/[id].vue.ts', styleClasses: ['a'] },
+        { virtualPath: 'a/{x}/(g)/!n/*?.vue.ts', styleClasses: ['a'] },
+      ],
+    });
+    expect(
+      (derived['overrides'] as { files: string[] }[]).map(
+        (override) => override.files,
+      ),
+    ).toEqual([
+      [String.raw`pages/\[id\].vue.ts`],
+      [String.raw`a/\{x\}/\(g\)/\!n/\*\?.vue.ts`],
+    ]);
+  });
+
+  it('applies the allowlist override to a virtual path with brackets', async () => {
+    const printed = await printConfig(oxlint, dir, configFile);
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'derive-e2e-')));
+    try {
+      const virtualPath = 'pages/[id].vue.ts';
+      mkdirSync(join(root, 'pages'));
+      writeFileSync(join(root, virtualPath), '  ;__(`only-in-style`)\n');
+      const run = async (styleClasses: string[]) => {
+        const configPath = join(root, '.oxlintrc.json');
+        writeFileSync(
+          configPath,
+          JSON.stringify(
+            deriveConfig({
+              printed,
+              configFile,
+              cwd: dir,
+              files: [{ virtualPath, styleClasses }],
+            }),
+          ),
+        );
+        const report = await lintVirtualFiles(oxlint, {
+          configPath,
+          cwd: root,
+          files: [virtualPath],
+        });
+        return report.diagnostics.map((diagnostic) => diagnostic.code);
+      };
+      expect((await run([])).join()).toContain('no-unknown-classes');
+      expect(await run(['only-in-style'])).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('maps a rule option entryPoint given as a mapping array', () => {
+    const derived = deriveConfig({
+      printed: {
+        jsPlugins,
+        rules: {
+          'tailwindcss/no-unknown-classes': [
+            'deny',
+            {
+              entryPoint: [{ files: ['src/**/*.vue'], use: 'src/style.css' }],
+            },
+          ],
+        },
+      },
+      configFile,
+      cwd: dir,
+      files: [],
+    });
+    expect(derived['rules'] as Record<string, unknown>).toEqual({
+      'tailwindcss/no-unknown-classes': [
+        'deny',
+        {
+          entryPoint: [
+            {
+              files: ['src/**/*.vue', 'src/**/*.vue.ts'],
+              use: join(dir, 'src', 'style.css'),
+            },
+          ],
+        },
+      ],
+    });
+    expect(() =>
+      deriveConfig({
+        printed: {
+          jsPlugins,
+          rules: {
+            'tailwindcss/no-unknown-classes': [
+              'deny',
+              { entryPoint: [{ files: [], use: 'src/nope.css' }] },
+            ],
+          },
+        },
+        configFile,
+        cwd: dir,
+        files: [],
+      }),
+    ).toThrow(/nope\.css/);
+  });
+
+  it('refuses oxlint-tailwindcss listed twice and names the entries', () => {
+    const run = () =>
+      deriveConfig({
+        printed: {
+          jsPlugins: [
+            'oxlint-tailwindcss',
+            { name: 'tw', specifier: 'oxlint-tailwindcss' },
+          ],
+        },
+        configFile,
+        cwd: dir,
+        files: [],
+      });
+    expect(run).toThrow(ToolError);
+    expect(run).toThrow(/2 times.*"name":"tw"/);
   });
 });
 
