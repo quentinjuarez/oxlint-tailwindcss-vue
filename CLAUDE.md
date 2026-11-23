@@ -52,8 +52,10 @@ yarn format          # oxfmt, also sorts package.json
   a patch, `!` or a `BREAKING CHANGE` footer a major, anything else nothing.
   Use `chore`, `docs`, `test`, `ci` or `refactor` for work that must not
   release.
-- CI publishes with npm trusted publishing (OIDC) once the repository variable
-  `RELEASE_ENABLED` is `true`. Quentin publishes the first version by hand.
+- CI publishes with npm trusted publishing (OIDC) from the `release` job, the
+  only one with `id-token: write`: it installs, builds and publishes, nothing
+  else. It stays off until the repository variable `RELEASE_ENABLED` is
+  `true`. Quentin publishes the first version by hand.
 
 ## Specialized agents (`.claude/agents/`)
 
