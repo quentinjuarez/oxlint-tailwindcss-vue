@@ -10,9 +10,12 @@ import {
 } from 'node:path';
 
 import {
+  configOptionsOf,
   deriveConfig,
   loadsTailwindPlugin,
   tailwindSettingsOf,
+  type ConfigOptions,
+  type TailwindSettings,
 } from './config/derive.js';
 import { ToolError } from './errors.js';
 import { mapDiagnostics, type VirtualSource } from './map-diagnostics.js';
@@ -21,6 +24,7 @@ import {
   lintVirtualFiles,
   printConfig,
   type FileSelection,
+  type PrintedConfig,
 } from './oxlint/commands.js';
 import {
   findConfigFile,
@@ -29,7 +33,7 @@ import {
 } from './oxlint/resolve.js';
 import { columnOf, type Position } from './positions.js';
 import { createTempRoot, pruneStaleTempRoots } from './temp.js';
-import type { Notice, Skip } from './virtual/types.js';
+import type { Notice, Skip, VirtualizeResult } from './virtual/types.js';
 import { virtualize } from './virtual/virtualize.js';
 
 export interface LintOptions {
@@ -74,6 +78,7 @@ export interface LintResult {
   findings: Finding[];
   files: FileReport[];
   skippedConfigs: SkippedConfig[];
+  warningOptions: { denyWarnings?: boolean; maxWarnings?: number };
 }
 
 interface GroupResult {
@@ -86,6 +91,8 @@ interface GroupRun {
   oxlint: OxlintInstall;
   cwd: string;
   configFile: string;
+  printedConfig: (configFile: string) => Promise<PrintedConfig>;
+  respectEslintDisableDirectives: boolean | undefined;
   files: readonly string[];
   dir: string;
   signal: AbortSignal | undefined;
@@ -93,6 +100,8 @@ interface GroupRun {
 
 const EXTERNAL = '_external';
 const VUE_PARSE_ERROR = 'Vue could not parse this file.';
+const ISSUES_URL =
+  'https://github.com/quentinjuarez/oxlint-tailwindcss-vue/issues';
 
 export async function lint(options: LintOptions = {}): Promise<LintResult> {
   try {
@@ -122,8 +131,14 @@ async function run(options: LintOptions): Promise<LintResult> {
   );
   const listed = await listLintedFiles(oxlint, cwd, selectionOf(options));
   signal?.throwIfAborted();
+  const printedConfig = configPrinter(oxlint, cwd);
+  const { respectEslintDisableDirectives, ...warningOptions }: ConfigOptions =
+    rootConfig === undefined
+      ? {}
+      : configOptionsOf(await printedConfig(rootConfig));
+  signal?.throwIfAborted();
   if (listed.length === 0)
-    return { findings: [], files: [], skippedConfigs: [] };
+    return { findings: [], files: [], skippedConfigs: [], warningOptions };
   const groups = groupByConfig([...new Set(listed)], userConfig);
 
   const temp = createTempRoot();
@@ -138,6 +153,8 @@ async function run(options: LintOptions): Promise<LintResult> {
         oxlint,
         cwd,
         configFile,
+        printedConfig,
+        respectEslintDisableDirectives,
         files: groupFiles,
         dir: join(temp.path, String(index)),
         signal,
@@ -154,10 +171,25 @@ async function run(options: LintOptions): Promise<LintResult> {
       skippedConfigs: skippedConfigs.toSorted((a, b) =>
         compareText(a.config, b.config),
       ),
+      warningOptions,
     };
   } finally {
     temp.remove();
   }
+}
+
+function configPrinter(
+  oxlint: OxlintInstall,
+  cwd: string,
+): (configFile: string) => Promise<PrintedConfig> {
+  const printed = new Map<string, Promise<PrintedConfig>>();
+  return (configFile) => {
+    const cached = printed.get(configFile);
+    if (cached !== undefined) return cached;
+    const config = printConfig(oxlint, cwd, configFile);
+    printed.set(configFile, config);
+    return config;
+  };
 }
 
 function noPluginError(skipped: readonly SkippedConfig[]): ToolError {
@@ -165,7 +197,7 @@ function noPluginError(skipped: readonly SkippedConfig[]): ToolError {
   const [only] = skipped;
   if (skipped.length === 1 && only !== undefined) {
     return new ToolError(
-      'oxlint-tailwindcss is not in the jsPlugins of your oxlint config.',
+      `oxlint-tailwindcss is not in the jsPlugins of your oxlint config: ${only.config}`,
       hint,
     );
   }
@@ -206,7 +238,7 @@ function groupByConfig(
 
 async function lintGroup(group: GroupRun): Promise<GroupResult> {
   const { oxlint, cwd, configFile, dir, signal } = group;
-  const printed = await printConfig(oxlint, cwd, configFile);
+  const printed = await group.printedConfig(configFile);
   signal?.throwIfAborted();
   if (!loadsTailwindPlugin(printed)) {
     return {
@@ -221,7 +253,8 @@ async function lintGroup(group: GroupRun): Promise<GroupResult> {
   const sources = new Map<string, VirtualSource & { styleClasses: string[] }>();
   for (const file of group.files) {
     const source = readSource(file);
-    const { code, skipped, notices, styleClasses } = virtualize(
+    const { code, skipped, notices, styleClasses } = virtualizeFile(
+      file,
       source,
       settings,
     );
@@ -252,6 +285,7 @@ async function lintGroup(group: GroupRun): Promise<GroupResult> {
     printed,
     configFile,
     cwd,
+    respectEslintDisableDirectives: group.respectEslintDisableDirectives,
   });
   const configPath = join(dir, '.oxlintrc.json');
   mkdirSync(dir, { recursive: true });
@@ -286,11 +320,38 @@ function readSource(file: string): string {
   try {
     return readFileSync(file, 'utf8');
   } catch (error) {
+    const message = `Cannot read ${file}: ${messageOf(error)}`;
+    throw isMissingFile(error)
+      ? new ToolError(
+          message,
+          'If the file still exists, a name in its path contains a backslash or a line break, which oxlint-tailwindcss-vue does not support.',
+        )
+      : new ToolError(message);
+  }
+}
+
+function isMissingFile(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && error.code === 'ENOENT';
+}
+
+function virtualizeFile(
+  file: string,
+  source: string,
+  settings: TailwindSettings,
+): VirtualizeResult {
+  try {
+    return virtualize(source, settings);
+  } catch (error) {
     throw new ToolError(
-      `Cannot read ${file}: ${error instanceof Error ? error.message : String(error)}`,
-      'File or directory names containing a backslash or a line break are not supported.',
+      `Unexpected error on ${file}: ${messageOf(error)}`,
+      `This is a bug in oxlint-tailwindcss-vue. Report it with this file at ${ISSUES_URL}`,
+      { cause: error },
     );
   }
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function locator(source: string): (offset: number) => Located {

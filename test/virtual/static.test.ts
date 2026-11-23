@@ -289,6 +289,14 @@ describe('virtualize: static values', () => {
     );
   });
 
+  it('checks a kebab-case attribute matched by a camelCase pattern', () => {
+    const source =
+      '<template><UCard content-class-name="p-2" footer="p-3" /></template>';
+    const result = checked(source, { attributePatterns: ['ClassName$'] });
+    expect(rewritten(source, result)).toEqual(['content-class-name="p-2"']);
+    expect(virtualOf(source, result.code, '"p-2"')).toBe('`p-2`');
+  });
+
   it('skips classes on template wrappers', () => {
     const source =
       '<template><template v-if="a" class="x"><b class="y"></b></template><template class="z"></template></template>';

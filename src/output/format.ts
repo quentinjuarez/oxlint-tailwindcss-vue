@@ -37,13 +37,12 @@ export function exitCodeFor(result: LintResult, options: ExitOptions): 0 | 1 {
   const warnings = findings.filter(({ severity }) => severity === 'warning');
   if (findings.length > warnings.length) return 1;
   if (result.files.some((report) => report.notChecked)) return 1;
-  if (options.denyWarnings && warnings.length > 0) return 1;
-  if (
-    options.maxWarnings !== undefined &&
-    warnings.length > options.maxWarnings
-  ) {
-    return 1;
-  }
+  const { warningOptions } = result;
+  const denyWarnings =
+    options.denyWarnings || warningOptions.denyWarnings === true;
+  const maxWarnings = options.maxWarnings ?? warningOptions.maxWarnings;
+  if (denyWarnings && warnings.length > 0) return 1;
+  if (maxWarnings !== undefined && warnings.length > maxWarnings) return 1;
   return 0;
 }
 

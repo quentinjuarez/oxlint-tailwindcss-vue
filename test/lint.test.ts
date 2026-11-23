@@ -1,11 +1,10 @@
 import {
+  chmodSync,
   existsSync,
-  mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
   rmSync,
-  symlinkSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs';
@@ -40,12 +39,23 @@ import {
   pruneStaleTempRoots,
   type TempRoot,
 } from '../src/temp.js';
+import { virtualize } from '../src/virtual/virtualize.js';
+import { project, removeScratchDirs, scratchDir } from './helpers/project.js';
 
 vi.mock('../src/temp.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/temp.js')>();
   return {
     ...actual,
     createTempRoot: vi.fn<typeof actual.createTempRoot>(actual.createTempRoot),
+  };
+});
+
+vi.mock('../src/virtual/virtualize.js', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../src/virtual/virtualize.js')>();
+  return {
+    ...actual,
+    virtualize: vi.fn<typeof actual.virtualize>(actual.virtualize),
   };
 });
 
@@ -62,7 +72,11 @@ const monorepoPackage = join(projects, 'monorepo', 'packages', 'app');
 const monorepoApp = join(monorepoPackage, 'src', 'App.vue');
 const crlfProject = join(fixtures, 'crlf', 'project');
 const crlfApp = join(crlfProject, 'src', 'App.vue');
-const nodeModules = fileURLToPath(new URL('../node_modules', import.meta.url));
+const bugsUrl = (
+  JSON.parse(
+    readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+  ) as { bugs: string }
+).bugs;
 
 const crlfFindings = [
   {
@@ -114,33 +128,11 @@ const vendorPlugin = `export default {
 };
 `;
 
-const scratch: string[] = [];
-
 beforeEach(() => {
   vi.mocked(createTempRoot).mockClear();
 });
 
-afterEach(() => {
-  for (const dir of scratch.splice(0)) {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-function scratchDir(): string {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'otv-lint-')));
-  scratch.push(dir);
-  return dir;
-}
-
-function project(files: Record<string, string>): string {
-  const dir = scratchDir();
-  symlinkSync(nodeModules, join(dir, 'node_modules'), 'junction');
-  for (const [name, content] of Object.entries(files)) {
-    mkdirSync(dirname(join(dir, name)), { recursive: true });
-    writeFileSync(join(dir, name), content);
-  }
-  return dir;
-}
+afterEach(removeScratchDirs);
 
 function vendorProject(rule: 'crash' | 'hang'): string {
   return project({
@@ -153,14 +145,18 @@ function vendorProject(rule: 'crash' | 'hang'): string {
   });
 }
 
-function overrideProject(files: string[]): string {
+function overrideProject(files: string[], excludeFiles?: string[]): string {
   return project({
     '.oxlintrc.json': JSON.stringify({
       jsPlugins: ['oxlint-tailwindcss'],
       settings: { tailwindcss: { entryPoint: 'src/style.css' } },
       rules: { 'tailwindcss/no-unknown-classes': 'error' },
       overrides: [
-        { files, rules: { 'tailwindcss/no-unknown-classes': 'off' } },
+        {
+          files,
+          excludeFiles,
+          rules: { 'tailwindcss/no-unknown-classes': 'off' },
+        },
       ],
     }),
     'src/style.css': '@import "tailwindcss";\n',
@@ -170,8 +166,11 @@ function overrideProject(files: string[]): string {
   });
 }
 
-async function reportedFiles(overrideFiles: string[]): Promise<string[]> {
-  const dir = overrideProject(overrideFiles);
+async function reportedFiles(
+  overrideFiles: string[],
+  excludeFiles?: string[],
+): Promise<string[]> {
+  const dir = overrideProject(overrideFiles, excludeFiles);
   const result = await lint({ cwd: dir });
   return result.findings.map(({ file }) =>
     relative(dir, file).split(sep).join('/'),
@@ -504,6 +503,7 @@ describe('lint on other projects', () => {
         findings: [],
         files: [],
         skippedConfigs: [],
+        warningOptions: {},
       });
       expect(createTempRoot).not.toHaveBeenCalled();
     },
@@ -535,6 +535,16 @@ describe('user globs', () => {
     'applies an override on src/legacy/** to the templates below it',
     async () => {
       expect(await reportedFiles(['src/legacy/**'])).toEqual(['src/App.vue']);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'keeps an override away from the templates of its excludeFiles',
+    async () => {
+      expect(await reportedFiles(['src/**'], ['src/legacy/**'])).toEqual([
+        'src/legacy/Old.vue',
+      ]);
     },
     TIMEOUT,
   );
@@ -606,6 +616,33 @@ describe('lint failures', () => {
       expect(message).toContain('vendor crash');
       expect(message).not.toContain('.vue.ts');
       expect(message).not.toContain('oxlint-tailwindcss-vue-');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'names the .vue file and asks for a bug report when preparing it throws',
+    async () => {
+      const dir = project({
+        '.oxlintrc.json': JSON.stringify({
+          jsPlugins: ['oxlint-tailwindcss'],
+          rules: { 'tailwindcss/no-unknown-classes': 'error' },
+        }),
+        'src/App.vue': '<template>\n  <p class="p-2"></p>\n</template>\n',
+      });
+      const slip = new Error('internal slip');
+      vi.mocked(virtualize).mockImplementationOnce(() => {
+        throw slip;
+      });
+      const error = await rejectionOf(lint({ cwd: dir }));
+      expect(error).toBeInstanceOf(ToolError);
+      const { message, hint, cause } = error as ToolError;
+      expect(message).toContain(join(dir, 'src', 'App.vue'));
+      expect(message).toContain('internal slip');
+      expect(hint).toContain('bug in oxlint-tailwindcss-vue');
+      expect(hint).toContain(bugsUrl);
+      expect(cause).toBe(slip);
+      for (const root of createdRoots()) expect(existsSync(root)).toBe(false);
     },
     TIMEOUT,
   );
@@ -744,6 +781,40 @@ describe('classes from a component style block', () => {
   );
 
   it(
+    'drops the classes that start with the prefix of a wildcard @utility, and only those',
+    async () => {
+      const dir = project({
+        '.oxlintrc.json': JSON.stringify({
+          jsPlugins: ['oxlint-tailwindcss'],
+          settings: { tailwindcss: { entryPoint: 'src/style.css' } },
+          rules: { 'tailwindcss/no-unknown-classes': 'error' },
+        }),
+        'src/style.css': '@import "tailwindcss";\n',
+        'src/A.vue': [
+          '<template>',
+          '  <p class="fancy-2 fancy-wide fancyx-2"></p>',
+          '  <p class="x-y"></p>',
+          '</template>',
+          '<style>',
+          '@utility fancy-* {',
+          '  outline-width: --value(integer);',
+          '}',
+          '.x- {',
+          '  color: red;',
+          '}',
+          '</style>',
+          '',
+        ].join('\n'),
+      });
+      const result = await lint({ cwd: dir });
+      expect(
+        messageOf(result).map((message) => /^"[^"]*"/.exec(message)?.[0]),
+      ).toEqual(['"fancyx-2"', '"x-y"']);
+    },
+    TIMEOUT,
+  );
+
+  it(
     'keeps the plugin message format the filter relies on',
     async () => {
       const dir = project({
@@ -846,17 +917,69 @@ describe('config groups without the plugin', () => {
   );
 
   it(
-    'keeps the short message for a single config',
+    'names the config when a single config does not load it',
     async () => {
-      const error = await rejectionOf(
-        lint({ cwd: join(projects, 'no-plugin') }),
-      );
+      const dir = join(projects, 'no-plugin');
+      const error = await rejectionOf(lint({ cwd: dir }));
       expect((error as ToolError).message).toBe(
-        'oxlint-tailwindcss is not in the jsPlugins of your oxlint config.',
+        `oxlint-tailwindcss is not in the jsPlugins of your oxlint config: ${join(dir, '.oxlintrc.json')}`,
       );
     },
     TIMEOUT,
   );
+});
+
+describe('options of the root config', () => {
+  let dir: string;
+  let result: LintResult;
+
+  beforeAll(async () => {
+    dir = project({
+      '.oxlintrc.json': JSON.stringify({
+        options: {
+          denyWarnings: true,
+          maxWarnings: 3,
+          respectEslintDisableDirectives: false,
+        },
+      }),
+      'packages/a/.oxlintrc.json': JSON.stringify({
+        jsPlugins: ['oxlint-tailwindcss'],
+        settings: { tailwindcss: { entryPoint: 'src/style.css' } },
+        rules: { 'tailwindcss/no-unknown-classes': 'error' },
+      }),
+      'packages/a/src/style.css': '@import "tailwindcss";\n',
+      'packages/a/src/A.vue': [
+        '<template>',
+        '  <!-- eslint-disable-next-line tailwindcss/no-unknown-classes -->',
+        '  <p class="unknown-eslint"></p>',
+        '  <!-- oxlint-disable-next-line tailwindcss/no-unknown-classes -->',
+        '  <p class="unknown-oxlint"></p>',
+        '</template>',
+        '',
+      ].join('\n'),
+    });
+    result = await lint({ cwd: dir });
+  }, TIMEOUT);
+
+  it('returns denyWarnings and maxWarnings', () => {
+    expect(result.warningOptions).toEqual({
+      denyWarnings: true,
+      maxWarnings: 3,
+    });
+  });
+
+  it('gives respectEslintDisableDirectives to the config of every group', () => {
+    expect(located(result, join(dir, 'packages', 'a', 'src', 'A.vue'))).toEqual(
+      [
+        {
+          rule: 'tailwindcss/no-unknown-classes',
+          severity: 'error',
+          line: 3,
+          column: 12,
+        },
+      ],
+    );
+  });
 });
 
 describe('listed paths that cannot be read', () => {
@@ -876,6 +999,32 @@ describe('listed paths that cannot be read', () => {
         join(dir, 'src', 'a', 'b', 'R.vue'),
       );
       expect((error as ToolError).hint).toContain('backslash or a line break');
+    },
+    TIMEOUT,
+  );
+
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    'keeps the system message, without the name hint, for a file it may not read',
+    async () => {
+      const dir = project({
+        '.oxlintrc.json': JSON.stringify({
+          jsPlugins: ['oxlint-tailwindcss'],
+          rules: { 'tailwindcss/no-unknown-classes': 'error' },
+        }),
+        'src/Locked.vue': '<template>\n  <p class="p-2"></p>\n</template>\n',
+      });
+      const locked = join(dir, 'src', 'Locked.vue');
+      chmodSync(locked, 0o000);
+      try {
+        const error = await rejectionOf(lint({ cwd: dir }));
+        expect(error).toBeInstanceOf(ToolError);
+        const { message, hint } = error as ToolError;
+        expect(message).toContain(locked);
+        expect(message).toContain('EACCES');
+        expect(hint).toBeUndefined();
+      } finally {
+        chmodSync(locked, 0o644);
+      }
     },
     TIMEOUT,
   );
@@ -1190,6 +1339,46 @@ describe('mapDiagnostics', () => {
     expect(finding?.end).toMatchObject({ line: 1, column: 1, offset: 0 });
   });
 
+  it('drops unknown classes of the style block, by prefix for a wildcard utility', () => {
+    const { report, context } = setup();
+    const files = new Map<string, VirtualSource>([
+      [
+        virtualPath,
+        {
+          report,
+          source,
+          code: source,
+          styleClasses: ['card', 'tab-*', 'x-', '*'],
+        },
+      ],
+    ]);
+    const unknown = (name: string) =>
+      diagnostic({ message: `"${name}" is not a valid Tailwind class.` });
+    const findings = mapDiagnostics(
+      [
+        unknown('card'),
+        unknown('cards'),
+        unknown('tab-4'),
+        unknown('tabs-4'),
+        unknown('hover:tab-4'),
+        unknown('x-'),
+        unknown('x-y'),
+        diagnostic({
+          code: 'tailwindcss(no-duplicate-classes)',
+          message: '"tab-4" is duplicated.',
+        }),
+      ],
+      { ...context, files },
+    );
+    expect(findings.map(({ message }) => message)).toEqual([
+      '"cards" is not a valid Tailwind class.',
+      '"tabs-4" is not a valid Tailwind class.',
+      '"hover:tab-4" is not a valid Tailwind class.',
+      '"x-y" is not a valid Tailwind class.',
+      '"tab-4" is duplicated.',
+    ]);
+  });
+
   it('sets notChecked from a parse error and keeps the first one', () => {
     const { report, context } = setup();
     const findings = mapDiagnostics(
@@ -1241,7 +1430,6 @@ describe('temp roots', () => {
     const stale = createTempRoot();
     const fresh = createTempRoot();
     const foreign = mkdtempSync(join(tempBase, 'oxlint-tailwindcss-vue-'));
-    scratch.push(foreign);
     const twoDaysAgo = new Date(Date.now() - 2 * DAY);
     utimesSync(stale.path, twoDaysAgo, twoDaysAgo);
     utimesSync(foreign, twoDaysAgo, twoDaysAgo);
@@ -1255,6 +1443,7 @@ describe('temp roots', () => {
     } finally {
       stale.remove();
       fresh.remove();
+      rmSync(foreign, { recursive: true, force: true });
     }
   });
 });

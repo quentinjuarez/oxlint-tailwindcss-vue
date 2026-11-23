@@ -64,8 +64,10 @@ export function createAttributeMatcher(
       (ROUTER_LINK_TAGS.has(tag) && ROUTER_LINK_PROPS.has(name))
     )
       return 'class';
-    if (userNames.has(name) || patterns.some((pattern) => pattern.test(name)))
-      return 'setting';
-    return undefined;
+    if (userNames.has(name)) return 'setting';
+    const forms = withForms([name]);
+    return patterns.some((pattern) => forms.some((form) => pattern.test(form)))
+      ? 'setting'
+      : undefined;
   };
 }

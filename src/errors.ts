@@ -2,8 +2,9 @@ export class ToolError extends Error {
   constructor(
     message: string,
     readonly hint?: string,
+    options?: ErrorOptions,
   ) {
-    super(message);
+    super(message, options);
     this.name = 'ToolError';
   }
 }

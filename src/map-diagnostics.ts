@@ -21,11 +21,18 @@ export interface MappingContext {
 }
 
 const PLUGIN_CRASH = 'Error running JS plugin';
+const WILDCARD_UTILITY_END = '-*';
 
 function virtualPathOf(filename: string, cwd: string): string {
   return filename.startsWith('file://')
     ? fileURLToPath(filename)
     : resolve(cwd, filename);
+}
+
+function quotedStart(styleClass: string): string {
+  return styleClass.endsWith(WILDCARD_UTILITY_END)
+    ? `"${styleClass.slice(0, -1)}`
+    : `"${styleClass}"`;
 }
 
 function isStyleClassReport(
@@ -34,8 +41,9 @@ function isStyleClassReport(
 ): boolean {
   return (
     diagnostic.code?.endsWith('(no-unknown-classes)') === true &&
-    styleClasses?.some((name) => diagnostic.message.startsWith(`"${name}"`)) ===
-      true
+    styleClasses?.some((name) =>
+      diagnostic.message.startsWith(quotedStart(name)),
+    ) === true
   );
 }
 

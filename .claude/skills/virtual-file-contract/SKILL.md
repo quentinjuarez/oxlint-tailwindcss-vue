@@ -24,7 +24,9 @@ is never bent to make a case pass: the attribute is skipped with a reason.
      where `source` holds an ASCII character that is not a line break, either
      inside the attribute's span, in the whitespace just before it, or on the
      first free slot after the value, before the next attribute or the end of
-     the tag (the closing `)` of a static value; no such slot means `no-room`).
+     the tag (the closing `)` of a static value; no such slot means `no-room`);
+   - `/` or `*`, which a disable comment writes over its own `<!--` and `-->`
+     (see "Disable comments").
 4. No index is written twice. The rewriter tracks used slots; a rewrite that
    needs a used slot is skipped with `no-room`.
 5. A skipped attribute stays blank, exactly like the text around it.
@@ -86,7 +88,8 @@ before it: `<p ui="a">` becomes ``  ;__(`a`)`` (two blanks first).
   - on `RouterLink`, `router-link`, `NuxtLink` and `nuxt-link`:
     `active-class`, `exact-active-class`.
 - Every name in the user's `settings.tailwindcss.attributes`, and every name
-  matching `attributePatterns`. Their objects are read like the plugin reads
+  whose form as written, in camel case or in kebab case matches a pattern of
+  `attributePatterns`. Their objects are read like the plugin reads
   a JSX attribute: the values, never the keys; the values of a nested object
   are not read (its quoted keys are, as in a `:class` object). Keys named
   `variants`, `compoundVariants` and `defaultVariants` get the cva reading
@@ -146,13 +149,14 @@ does on a script.
 Read with the tolerant tokenizer, never a regex over the raw text: skip
 comments (and `//` in SCSS, Less, Stylus), strings and `url()`; split selectors
 on top-level commas; resolve `&` against the parent selector; decode CSS
-escapes (`.md\:flex` is `md:flex`); keep `@utility` names (a `-*` utility gives
-a prefix); in CSS modules count only `:global()` names. Drop names built with
-interpolation (`#{}`, `@{}`). `@scope (<roots>) to (<limits>)`, with or without
-`to`, defines the classes of both selector lists, next to the classes inside
-the block; `:scope` names no class. Strip only unescaped attribute selectors:
-`.grid-areas-\[main\]` defines `grid-areas-[main]`, and `.a[data-x="]"]`
-defines only `a`.
+escapes (`.md\:flex` is `md:flex`); keep `@utility` names (a wildcard
+`@utility tab-*` keeps its `*`, which the post-run filter reads as the prefix
+`tab-`; a class literally named `.tab-` stays exact); in CSS modules count
+only `:global()` names. Drop names built with interpolation (`#{}`, `@{}`).
+`@scope (<roots>) to (<limits>)`, with or without `to`, defines the classes of
+both selector lists, next to the classes inside the block; `:scope` names no
+class. Strip only unescaped attribute selectors: `.grid-areas-\[main\]`
+defines `grid-areas-[main]`, and `.a[data-x="]"]` defines only `a`.
 
 ## Adding a case
 

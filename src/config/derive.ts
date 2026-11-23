@@ -11,13 +11,21 @@ export interface TailwindSettings {
   attributePatterns: string[];
 }
 
+export interface ConfigOptions {
+  denyWarnings?: boolean;
+  maxWarnings?: number;
+  respectEslintDisableDirectives?: boolean;
+}
+
 export interface DeriveInput {
   printed: PrintedConfig;
   configFile: string;
   cwd: string;
+  respectEslintDisableDirectives?: boolean | undefined;
 }
 
 const TAILWIND_PLUGIN = /(^|[\\/])oxlint-tailwindcss([\\/]|$)/;
+const BARE_ENTRY_ALIAS = 'tailwindcss';
 
 type Json = Record<string, unknown>;
 
@@ -37,12 +45,34 @@ function specifierOf(entry: PluginEntry): string {
   return typeof entry === 'string' ? entry : entry.specifier;
 }
 
+function aliasOf(entry: PluginEntry): string {
+  return typeof entry === 'string' ? BARE_ENTRY_ALIAS : entry.name;
+}
+
 export function tailwindSettingsOf(printed: PrintedConfig): TailwindSettings {
   const settings = asRecord(printed.settings?.['tailwindcss']);
   return {
     attributes: strings(settings['attributes']),
     attributePatterns: strings(settings['attributePatterns']),
   };
+}
+
+export function configOptionsOf(printed: PrintedConfig): ConfigOptions {
+  const { denyWarnings, maxWarnings, respectEslintDisableDirectives } =
+    asRecord(printed.options);
+  const options: ConfigOptions = {};
+  if (typeof denyWarnings === 'boolean') options.denyWarnings = denyWarnings;
+  if (
+    typeof maxWarnings === 'number' &&
+    Number.isInteger(maxWarnings) &&
+    maxWarnings >= 0
+  ) {
+    options.maxWarnings = maxWarnings;
+  }
+  if (typeof respectEslintDisableDirectives === 'boolean') {
+    options.respectEslintDisableDirectives = respectEslintDisableDirectives;
+  }
+  return options;
 }
 
 function declaredPlugins(printed: PrintedConfig): PluginEntry[] {
@@ -59,9 +89,9 @@ export function loadsTailwindPlugin(printed: PrintedConfig): boolean {
 }
 
 function findPlugin(printed: PrintedConfig): PluginEntry {
-  const byAlias = new Map<string | undefined, PluginEntry>();
+  const byAlias = new Map<string, PluginEntry>();
   for (const entry of declaredPlugins(printed)) {
-    const alias = typeof entry === 'string' ? undefined : entry.name;
+    const alias = aliasOf(entry);
     if (!byAlias.has(alias)) byAlias.set(alias, entry);
   }
   const [entry] = byAlias.values();
@@ -112,11 +142,10 @@ function globsOf(value: unknown): string[] {
 }
 
 export function deriveConfig(input: DeriveInput): Record<string, unknown> {
-  const { printed, configFile, cwd } = input;
+  const { printed, configFile, cwd, respectEslintDisableDirectives } = input;
   const configDir = dirname(configFile);
   const plugin = findPlugin(printed);
-  const alias = typeof plugin === 'string' ? undefined : plugin.name;
-  const prefix = `${alias ?? 'tailwindcss'}/`;
+  const prefix = `${aliasOf(plugin)}/`;
   const pluginPath = resolvePluginPath(specifierOf(plugin), configFile);
 
   const absolute = (path: string): string => {
@@ -177,22 +206,31 @@ export function deriveConfig(input: DeriveInput): Record<string, unknown> {
   };
 
   const rules = onlyTailwind(printed.rules);
-  const userOverrides = (printed.overrides ?? [])
-    .map((override) => ({
-      files: override.files.map(virtualGlob),
-      rules: onlyTailwind(override.rules),
-    }))
-    .filter((override) => Object.keys(override.rules).length > 0);
+  const userOverrides = (printed.overrides ?? []).flatMap((override) => {
+    const overrideRules = onlyTailwind(override.rules);
+    if (Object.keys(overrideRules).length === 0) return [];
+    const derived: Json = { files: override.files.map(virtualGlob) };
+    if (override.excludeFiles !== undefined) {
+      derived['excludeFiles'] = override.excludeFiles.map(virtualGlob);
+    }
+    derived['rules'] = overrideRules;
+    return [derived];
+  });
 
   return {
     plugins: [],
     categories: {},
     jsPlugins: [
-      alias === undefined ? pluginPath : { name: alias, specifier: pluginPath },
+      typeof plugin === 'string'
+        ? pluginPath
+        : { name: plugin.name, specifier: pluginPath },
     ],
     settings: { tailwindcss: settings },
     rules,
     overrides: userOverrides,
     ignorePatterns: [],
+    ...(respectEslintDisableDirectives === undefined
+      ? {}
+      : { options: { respectEslintDisableDirectives } }),
   };
 }

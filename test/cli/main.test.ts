@@ -2,18 +2,39 @@ import { readFileSync } from 'node:fs';
 import { Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { main } from '../../src/cli/main.js';
 import { ToolError } from '../../src/errors.js';
 import * as lintModule from '../../src/lint.js';
+import type { LintResult } from '../../src/lint.js';
+import { project, removeScratchDirs } from '../helpers/project.js';
 
 const projects = fileURLToPath(
   new URL('../fixtures/projects/', import.meta.url),
 );
 const basic = `${projects}basic`;
 const noPlugin = `${projects}no-plugin`;
+const appFile = `${basic}/src/App.vue`;
 const TIMEOUT = 60_000;
+
+const oneError: LintResult = {
+  findings: [
+    {
+      file: appFile,
+      rule: 'r/x',
+      severity: 'error',
+      message: 'm',
+      start: { line: 1, column: 1, offset: 0, byteOffset: 0, byteColumn: 1 },
+      end: { line: 1, column: 2, offset: 1, byteOffset: 1, byteColumn: 2 },
+    },
+  ],
+  files: [{ file: appFile, skipped: [], notices: [] }],
+  skippedConfigs: [],
+  warningOptions: {},
+};
+
+afterEach(removeScratchDirs);
 
 class Sink extends Writable {
   text = '';
@@ -58,6 +79,7 @@ describe('main', () => {
     expect(code).toBe(0);
     expect(out).toContain('oxlint-tailwindcss-vue [options] [paths...]');
     expect(out).toContain('--max-warnings');
+    expect(out).toContain('(default format only)');
   });
 
   it('prints the version', async () => {
@@ -148,6 +170,26 @@ describe('main', () => {
   );
 
   it(
+    'exits 1 on a template warning when the root config denies warnings',
+    async () => {
+      const dir = project({
+        '.oxlintrc.json': JSON.stringify({
+          jsPlugins: ['oxlint-tailwindcss'],
+          settings: { tailwindcss: { entryPoint: 'src/style.css' } },
+          options: { denyWarnings: true },
+          rules: { 'tailwindcss/no-duplicate-classes': 'warn' },
+        }),
+        'src/style.css': '@import "tailwindcss";\n',
+        'src/App.vue': '<template>\n  <p class="p-2 p-2"></p>\n</template>\n',
+      });
+      const { code, out } = await run([], { cwd: dir });
+      expect(out).toContain('0 errors, 1 warning in 1 file');
+      expect(code).toBe(1);
+    },
+    TIMEOUT,
+  );
+
+  it(
     'prints json without color even when forced',
     async () => {
       const { out } = await run(['-f', 'json'], {
@@ -192,31 +234,7 @@ describe('main', () => {
       ],
     ])('%s', async (_name, io, colored) => {
       const lint = vi.spyOn(lintModule, 'lint');
-      lint.mockResolvedValue({
-        findings: [
-          {
-            file: `${basic}/src/App.vue`,
-            rule: 'r/x',
-            severity: 'error',
-            message: 'm',
-            start: {
-              line: 1,
-              column: 1,
-              offset: 0,
-              byteOffset: 0,
-              byteColumn: 1,
-            },
-            end: {
-              line: 1,
-              column: 2,
-              offset: 1,
-              byteOffset: 1,
-              byteColumn: 2,
-            },
-          },
-        ],
-        files: [{ file: `${basic}/src/App.vue`, skipped: [], notices: [] }],
-      } as never);
+      lint.mockResolvedValue(oneError);
       const { out } = await run([], io);
       expect(out.includes('\u001B[')).toBe(colored);
       lint.mockRestore();
@@ -250,7 +268,32 @@ describe('main', () => {
       const { code, err } = await run([]);
       lint.mockRestore();
       expect(code).toBe(2);
-      expect(err).toContain('kaput');
+      expect(err).toBe('Unexpected error: kaput\n');
+    });
+
+    it('adds the stack of an unexpected error with --debug', async () => {
+      const kaput = new Error('kaput');
+      const lint = vi.spyOn(lintModule, 'lint').mockRejectedValue(kaput);
+      const { code, err } = await run(['--debug', '-f', 'json']);
+      lint.mockRestore();
+      expect(code).toBe(2);
+      expect(err).toBe(`Unexpected error: kaput\n${kaput.stack}\n`);
+      expect(kaput.stack).toMatch(/\n\s+at /);
+    });
+
+    it('adds the stack of the cause of a ToolError with --debug, and only then', async () => {
+      const slip = new Error('slip');
+      const lint = vi
+        .spyOn(lintModule, 'lint')
+        .mockRejectedValue(new ToolError('broke', 'try this', { cause: slip }));
+      const plain = await run([]);
+      const debug = await run(['--debug']);
+      lint.mockRejectedValue(new ToolError('broke', 'try this'));
+      const withoutCause = await run(['--debug']);
+      lint.mockRestore();
+      expect(plain.err).toBe('broke\ntry this\n');
+      expect(debug.err).toBe(`broke\ntry this\n${slip.stack}\n`);
+      expect(withoutCause.err).toBe('broke\ntry this\n');
     });
 
     it('prints a non-Error rejection', async () => {

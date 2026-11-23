@@ -20,7 +20,10 @@ yarn format          # oxfmt, also sorts package.json
 
 ## Layout
 
-- `src/cli.ts`: the bin (shebang), argument parsing, exit code, signals.
+- `src/cli.ts`: the bin (shebang) and its signal handlers.
+- `src/cli/args.ts`: argument parsing. `src/cli/main.ts`: help, version,
+  output, error messages and the exit code, which `exitCodeFor` in
+  `src/output/format.ts` decides.
 - `src/index.ts`: the public API (`virtualize`, `lint`) and its types.
 - `test/`: Vitest. `test/fixtures/` holds byte-exact `.vue` fixtures; the ones
   in `test/fixtures/crlf/` keep their CRLF line endings (`.gitattributes`).

@@ -116,12 +116,12 @@ oxlint-tailwindcss as a function argument.
 
 What oxlint-tailwindcss-vue reports:
 
-| Finding                                                                                   | In the output                                                                                                                                                   | Exit code     |
-| :---------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------ |
-| A class problem found by one of your rules                                                | The rule id, such as `tailwindcss/no-unknown-classes` (`tailwindcss(no-unknown-classes)` in `json`, or your plugin alias), with the severity set in your config | 1 on an error |
-| A `.vue` file that Vue cannot parse, or a virtual file that oxlint cannot parse           | `not checked:` and the reason (`oxlint-tailwindcss-vue(not-checked)` in `json`, `not-checked` in `github`)                                                      | 1             |
-| With `--debug`, a skipped attribute                                                       | `skipped`, the reason code and the attribute                                                                                                                    | No effect     |
-| With `--debug`, an object key without quotes at the top of `:class`, or in an array there | `notice unquoted-key` and the key                                                                                                                               | No effect     |
+| Finding                                                                                                            | In the output                                                                                                                                                   | Exit code     |
+| :----------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------ |
+| A class problem found by one of your rules                                                                         | The rule id, such as `tailwindcss/no-unknown-classes` (`tailwindcss(no-unknown-classes)` in `json`, or your plugin alias), with the severity set in your config | 1 on an error |
+| A `.vue` file that Vue cannot parse, or a virtual file that oxlint cannot parse                                    | `not checked:` and the reason (`oxlint-tailwindcss-vue(not-checked)` in `json`, `not-checked` in `github`)                                                      | 1             |
+| With `--debug` and the `default` format, a skipped attribute                                                       | `skipped`, the reason code and the attribute                                                                                                                    | No effect     |
+| With `--debug` and the `default` format, an object key without quotes at the top of `:class`, or in an array there | `notice unquoted-key` and the key                                                                                                                               | No effect     |
 
 What oxlint-tailwindcss-vue skips, with the reason code that `--debug` prints:
 
@@ -155,9 +155,10 @@ checked either.
    attribute.
 3. **Run oxlint.** oxlint runs once per oxlint config, on the virtual files in
    a temporary folder, with a config derived from yours: your Tailwind rules,
-   settings and overrides only, with the native rules off. The classes each
-   component defines in its own `<style>` blocks are not added to an
-   allowlist: their `no-unknown-classes` findings are dropped after the run.
+   settings and overrides, and your `respectEslintDisableDirectives` option,
+   with the native rules off. The classes each component defines in its own
+   `<style>` blocks are not added to an allowlist: their `no-unknown-classes`
+   findings are dropped after the run.
 4. **Map positions back.** oxlint reports UTF-8 byte offsets in the virtual
    file. oxlint-tailwindcss-vue converts each one to a UTF-16 index through the
    virtual text. That index is the same in the `.vue` file, which gives the
@@ -205,20 +206,20 @@ Versions: oxlint 1.94.0, oxlint-tailwindcss 1.17.2, tailwindcss 4.3.5, Vue
 oxlint-tailwindcss-vue [options] [paths...]
 ```
 
-| Option                 | Effect                                                                                                                              |
-| :--------------------- | :---------------------------------------------------------------------------------------------------------------------------------- |
-| `paths`                | Files or folders to check, as with oxlint. Default: the current folder.                                                             |
-| `-c, --config <path>`  | oxlint config file. Default: oxlint's lookup.                                                                                       |
-| `--ignore-path <path>` | Passed to oxlint's file selection.                                                                                                  |
-| `--ignore-pattern <p>` | Passed to oxlint's file selection. Repeatable.                                                                                      |
-| `--no-ignore`          | Passed to oxlint's file selection.                                                                                                  |
-| `-f, --format <name>`  | `default`, `json` or `github`.                                                                                                      |
-| `--quiet`              | Report errors only.                                                                                                                 |
-| `--max-warnings <n>`   | Exit 1 above `n` warnings.                                                                                                          |
-| `--deny-warnings`      | Exit 1 on any warning.                                                                                                              |
-| `--debug`              | List skipped attributes with their reason, object keys without quotes in `:class`, and configs that do not load oxlint-tailwindcss. |
-| `-h, --help`           | Show the help.                                                                                                                      |
-| `-V, --version`        | Show the version.                                                                                                                   |
+| Option                 | Effect                                                                                                                                                                                                                                 |
+| :--------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `paths`                | Files or folders to check, as with oxlint. Default: the current folder.                                                                                                                                                                |
+| `-c, --config <path>`  | oxlint config file. Default: oxlint's lookup.                                                                                                                                                                                          |
+| `--ignore-path <path>` | Passed to oxlint's file selection.                                                                                                                                                                                                     |
+| `--ignore-pattern <p>` | Passed to oxlint's file selection. Repeatable.                                                                                                                                                                                         |
+| `--no-ignore`          | Passed to oxlint's file selection.                                                                                                                                                                                                     |
+| `-f, --format <name>`  | `default`, `json` or `github`.                                                                                                                                                                                                         |
+| `--quiet`              | Report errors only.                                                                                                                                                                                                                    |
+| `--max-warnings <n>`   | Exit 1 above `n` warnings. Default: `options.maxWarnings` of your root oxlint config.                                                                                                                                                  |
+| `--deny-warnings`      | Exit 1 on any warning. `options.denyWarnings: true` in your root oxlint config does the same.                                                                                                                                          |
+| `--debug`              | With the `default` format only, list skipped attributes with their reason, object keys without quotes in `:class`, and configs that do not load oxlint-tailwindcss. With any format, print the stack of an unexpected error to stderr. |
+| `-h, --help`           | Show the help.                                                                                                                                                                                                                         |
+| `-V, --version`        | Show the version.                                                                                                                                                                                                                      |
 
 Without `-c`, oxlint-tailwindcss-vue uses the nearest `.oxlintrc.json`,
 `.oxlintrc.jsonc`, `oxlint.config.ts` or `oxlint.config.mts` of each `.vue`
@@ -228,6 +229,13 @@ A config that does not load oxlint-tailwindcss is skipped, since oxlint does
 not check Tailwind CSS classes there either, and `--debug` lists it with its
 number of `.vue` files. oxlint-tailwindcss can be declared in the top-level
 `jsPlugins` or in the `jsPlugins` of an override.
+
+oxlint reads `options` only from the root config: the `-c` file, or the
+config found from the current folder. oxlint-tailwindcss-vue does the same.
+`options.maxWarnings` and `options.denyWarnings` count like `--max-warnings`
+and `--deny-warnings` when the flag is absent; a flag wins, as in oxlint.
+`options.respectEslintDisableDirectives` applies to the disable comments of
+templates too.
 
 Formats:
 
@@ -251,7 +259,7 @@ Exit codes:
 
 | Code | Meaning                                                                                                                                                                                                                                                                                       |
 | :--- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0    | No error, and warnings within `--max-warnings`                                                                                                                                                                                                                                                |
+| 0    | No error, and warnings within `--max-warnings` (or `options.maxWarnings`)                                                                                                                                                                                                                     |
 | 1    | An error, a file that could not be parsed, or too many warnings                                                                                                                                                                                                                               |
 | 2    | Tool failure: an invalid option, oxlint missing or older than 1.94.0, no oxlint config, oxlint-tailwindcss loaded by no config, not installed or declared under two aliases, a path or CSS entry point not found, a listed `.vue` file that cannot be read, unexpected oxlint output or crash |
 | 130  | Interrupted by SIGINT                                                                                                                                                                                                                                                                         |
@@ -274,8 +282,10 @@ for (const { file, start, rule, message } of findings) {
 `lint()` takes the file selection options of the CLI (`paths`, `config`,
 `ignorePath`, `ignorePatterns`, `noIgnore`) and an abort `signal`. Next to
 `findings`, it returns `files`, one report per `.vue` file with its skipped
-attributes and notices, and `skippedConfigs`, the configs that do not load
-oxlint-tailwindcss with their number of `.vue` files.
+attributes and notices, `skippedConfigs`, the configs that do not load
+oxlint-tailwindcss with their number of `.vue` files, and `warningOptions`,
+the `denyWarnings` and `maxWarnings` set in the `options` of the root oxlint
+config, which the CLI applies to its exit code.
 `virtualize(source, options)` returns the virtual file of one `.vue` source,
 with its rewrites and skipped attributes.
 
@@ -374,18 +384,21 @@ folder that is removed after the run, and there is no `--fix` yet.
 Put an HTML comment on the line before:
 `<!-- oxlint-disable-next-line tailwindcss/no-unknown-classes -->`.
 `oxlint-disable`, `oxlint-enable`, `eslint-disable` and `eslint-enable`
-comments work too. Only comments inside `<template>` apply to it: not an HTML
-comment before `<template>` at the top of the file, and not a
-`/* eslint-disable */` in `<script>`. An `oxlint-disable-line` comment placed
-before the code on its line does nothing, as in oxlint: put
-`oxlint-disable-next-line` on the line before instead.
+comments work too; `eslint-*` comments follow
+`options.respectEslintDisableDirectives` of your root oxlint config, as in
+oxlint. Only comments inside `<template>` apply to it: not an HTML comment
+before `<template>` at the top of the file, and not a `/* eslint-disable */`
+in `<script>`. An `oxlint-disable-line` comment placed before the code on its
+line does nothing, as in oxlint: put `oxlint-disable-next-line` on the line
+before instead.
 
 ### Why is a class from my `<style>` block not reported as unknown?
 
 oxlint-tailwindcss-vue drops the `no-unknown-classes` findings on the classes
 a component defines in its own `<style>` blocks after the run, instead of
-adding them to an allowlist, so your overrides of that rule still apply. In
-CSS modules, only `:global()` names count.
+adding them to an allowlist, so your overrides of that rule still apply. A
+wildcard `@utility tab-*` covers every class that starts with `tab-`. In CSS
+modules, only `:global()` names count.
 
 ### Does oxlint-tailwindcss-vue work with Nuxt?
 

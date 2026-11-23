@@ -36,6 +36,7 @@ function finding(overrides: Partial<Finding> = {}): Finding {
 
 const result: LintResult = {
   skippedConfigs: [],
+  warningOptions: {},
   findings: [
     finding(),
     finding({
@@ -98,6 +99,7 @@ describe('default format', () => {
   it('uses singular nouns for one finding in one file', () => {
     const one: LintResult = {
       skippedConfigs: [],
+      warningOptions: {},
       findings: [finding()],
       files: result.files,
     };
@@ -109,14 +111,24 @@ describe('default format', () => {
   it('says so when nothing was found', () => {
     expect(
       formatReport(
-        { skippedConfigs: [], findings: [], files: result.files },
+        {
+          skippedConfigs: [],
+          warningOptions: {},
+          findings: [],
+          files: result.files,
+        },
         'default',
         plain,
       ),
     ).toBe('No problems found in 3 files.\n');
     expect(
       formatReport(
-        { skippedConfigs: [], findings: [], files: result.files.slice(0, 1) },
+        {
+          skippedConfigs: [],
+          warningOptions: {},
+          findings: [],
+          files: result.files.slice(0, 1),
+        },
         'default',
         plain,
       ),
@@ -160,6 +172,7 @@ describe('default format', () => {
   it('lists files that were not checked', () => {
     const unchecked: LintResult = {
       skippedConfigs: [],
+      warningOptions: {},
       findings: [],
       files: [
         ...result.files,
@@ -184,6 +197,7 @@ describe('default format', () => {
   it('drops warnings with --quiet but keeps files that were not checked', () => {
     const warningsOnly: LintResult = {
       skippedConfigs: [],
+      warningOptions: {},
       findings: [result.findings[1] as Finding],
       files: [
         ...result.files,
@@ -224,6 +238,7 @@ describe('json format', () => {
   it('keeps help and url when present, and honors --quiet', () => {
     const rich: LintResult = {
       skippedConfigs: [],
+      warningOptions: {},
       findings: [
         finding({ help: 'Remove it.', url: 'https://example.com/rule' }),
         result.findings[1] as Finding,
@@ -243,6 +258,7 @@ describe('json format', () => {
   it('reports a file that was not checked as an error', () => {
     const unchecked: LintResult = {
       skippedConfigs: [],
+      warningOptions: {},
       findings: [],
       files: [
         { file: broken, skipped: [], notices: [], notChecked: 'Bad file.' },
@@ -280,6 +296,7 @@ describe('github format', () => {
   it('escapes message and property values', () => {
     const tricky: LintResult = {
       skippedConfigs: [],
+      warningOptions: {},
       findings: [
         finding({
           file: join(cwd, 'a,b:c%.vue'),
@@ -296,6 +313,7 @@ describe('github format', () => {
   it('reports a file that was not checked and honors --quiet', () => {
     const unchecked: LintResult = {
       skippedConfigs: [],
+      warningOptions: {},
       findings: [result.findings[1] as Finding],
       files: [
         { file: broken, skipped: [], notices: [], notChecked: 'Bad file.' },
@@ -312,16 +330,28 @@ describe('exitCodeFor', () => {
   const warning = result.findings[1] as Finding;
   const error = result.findings[0] as Finding;
   const files = result.files;
+  const twoWarnings = (
+    warningOptions: LintResult['warningOptions'],
+  ): LintResult => ({
+    skippedConfigs: [],
+    warningOptions,
+    findings: [warning, warning],
+    files,
+  });
 
   it('is 1 with an error', () => {
     expect(
-      exitCodeFor({ skippedConfigs: [], findings: [error], files }, base),
+      exitCodeFor(
+        { skippedConfigs: [], warningOptions: {}, findings: [error], files },
+        base,
+      ),
     ).toBe(1);
   });
 
   it('is 1 with a file that was not checked', () => {
     const unchecked = {
       skippedConfigs: [],
+      warningOptions: {},
       findings: [],
       files: [{ file: broken, skipped: [], notices: [], notChecked: 'x' }],
     };
@@ -330,15 +360,26 @@ describe('exitCodeFor', () => {
 
   it('is 0 with warnings only', () => {
     expect(
-      exitCodeFor({ skippedConfigs: [], findings: [warning], files }, base),
+      exitCodeFor(
+        { skippedConfigs: [], warningOptions: {}, findings: [warning], files },
+        base,
+      ),
     ).toBe(0);
     expect(
-      exitCodeFor({ skippedConfigs: [], findings: [], files: [] }, base),
+      exitCodeFor(
+        { skippedConfigs: [], warningOptions: {}, findings: [], files: [] },
+        base,
+      ),
     ).toBe(0);
   });
 
   it('is 1 above --max-warnings', () => {
-    const two = { skippedConfigs: [], findings: [warning, warning], files };
+    const two = {
+      skippedConfigs: [],
+      warningOptions: {},
+      findings: [warning, warning],
+      files,
+    };
     expect(exitCodeFor(two, { ...base, maxWarnings: 2 })).toBe(0);
     expect(exitCodeFor(two, { ...base, maxWarnings: 1 })).toBe(1);
   });
@@ -346,7 +387,7 @@ describe('exitCodeFor', () => {
   it('is 1 with --deny-warnings and a warning', () => {
     expect(
       exitCodeFor(
-        { skippedConfigs: [], findings: [warning], files },
+        { skippedConfigs: [], warningOptions: {}, findings: [warning], files },
         { ...base, denyWarnings: true },
       ),
     ).toBe(1);
@@ -355,9 +396,48 @@ describe('exitCodeFor', () => {
   it('ignores warnings when quiet', () => {
     expect(
       exitCodeFor(
-        { skippedConfigs: [], findings: [warning], files },
+        { skippedConfigs: [], warningOptions: {}, findings: [warning], files },
         { quiet: true, denyWarnings: true, maxWarnings: 0 },
       ),
     ).toBe(0);
+  });
+
+  describe('with the warning options of the oxlint config', () => {
+    it('applies maxWarnings unless --max-warnings is given', () => {
+      expect(exitCodeFor(twoWarnings({ maxWarnings: 1 }), base)).toBe(1);
+      expect(exitCodeFor(twoWarnings({ maxWarnings: 2 }), base)).toBe(0);
+      expect(
+        exitCodeFor(twoWarnings({ maxWarnings: 1 }), {
+          ...base,
+          maxWarnings: 5,
+        }),
+      ).toBe(0);
+      expect(
+        exitCodeFor(twoWarnings({ maxWarnings: 5 }), {
+          ...base,
+          maxWarnings: 1,
+        }),
+      ).toBe(1);
+    });
+
+    it('applies denyWarnings, even with --max-warnings', () => {
+      expect(exitCodeFor(twoWarnings({ denyWarnings: false }), base)).toBe(0);
+      expect(exitCodeFor(twoWarnings({ denyWarnings: true }), base)).toBe(1);
+      expect(
+        exitCodeFor(twoWarnings({ denyWarnings: true }), {
+          ...base,
+          maxWarnings: 5,
+        }),
+      ).toBe(1);
+    });
+
+    it('still ignores warnings when quiet', () => {
+      expect(
+        exitCodeFor(twoWarnings({ denyWarnings: true, maxWarnings: 0 }), {
+          ...base,
+          quiet: true,
+        }),
+      ).toBe(0);
+    });
   });
 });

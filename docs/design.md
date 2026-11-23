@@ -59,11 +59,13 @@ silently. The usual workaround is to keep ESLint for templates only.
    ignore flags, in the user's cwd, and keep the `.vue` entries. This honors
    `.gitignore`, `ignorePatterns` and `--ignore-pattern` exactly like oxlint.
 2. **Read the config.** For each file, find the nearest oxlint config (or the
-   user's `-c`) and flatten it with `oxlint --print-config`.
+   user's `-c`) and flatten it with `oxlint --print-config`. The root config
+   (the `-c` file, or the config found from the cwd) is flattened too: oxlint
+   accepts `options` only there, and applies them to every file.
 3. **Virtualize.** Parse each file with `@vue/compiler-sfc` and build a virtual
    `.ts` file (see "Virtual file contract").
-4. **Derive a config** per group of files sharing a config and a CSS entry
-   point (see "Derived config").
+4. **Derive a config** per config group: the files that share an oxlint config
+   (see "Derived config").
 5. **Run oxlint once per group** on the virtual files in a temp dir. A group
    whose config loads oxlint-tailwindcss nowhere is not linted, and `--debug`
    prints `skipped <N> .vue files: <config> does not load oxlint-tailwindcss`.
@@ -148,21 +150,27 @@ can interfere:
   from the config directory with the import conditions, declared once at the
   top level with the user's alias. The plugin is looked up in the printed
   top-level `jsPlugins` and in every `overrides[].jsPlugins`; declarations with
-  the same alias count as one, different aliases are a tool failure.
+  the same alias count as one (a bare `"oxlint-tailwindcss"` entry has the
+  plugin's own name, `tailwindcss`), different aliases are a tool failure.
 - `settings.tailwindcss`: the user's block, with `entryPoint` made absolute,
   `__` added to `callees` and `___: 'cva'` added to the user's
   `calleeExtractors` (oxlint-tailwindcss also registers every extractor name
   as a callee).
 - `rules`: only the `tailwindcss/*` rules (or the user's alias), with option
   paths made absolute.
-- `overrides`: the user's overrides reduced to the Tailwind rules. No per-file
-  allowlist override is written: it would be replaced by any user override of
-  `no-unknown-classes` (see "Classes defined in `<style>`").
-- Every user glob, in override `files` and in `entryPoint` mapping `files`,
-  gets `.ts` appended, or `/*.ts` after a final `**` or `/` (oxlint does not
-  recurse on `**.ts`). Only virtual files are linted, and the suffix keeps
-  exactly the `.vue` files the glob matched: `**/*.ts` stays away from
-  templates, `**/*.{js,vue}` and `src/legacy/**` reach them.
+- `overrides`: the user's overrides reduced to the Tailwind rules, with their
+  `files` and `excludeFiles`. No per-file allowlist override is written: it
+  would be replaced by any user override of `no-unknown-classes` (see "Classes
+  defined in `<style>`").
+- Every user glob, in override `files` and `excludeFiles` and in `entryPoint`
+  mapping `files`, gets `.ts` appended, or `/*.ts` after a final `**` or `/`
+  (oxlint does not recurse on `**.ts`). Only virtual files are linted, and the
+  suffix keeps exactly the `.vue` files the glob matched: `**/*.ts` stays away
+  from templates, `**/*.{js,vue}` and `src/legacy/**` reach them.
+- `options.respectEslintDisableDirectives` of the root config, when it is set,
+  so `eslint-disable` comments in templates follow it as they do in scripts.
+  No other option is copied: the CLI applies `maxWarnings` and `denyWarnings`
+  itself (see "Running oxlint").
 
 `extends` is not used: it drops `settings` and `ignorePatterns`.
 
@@ -188,7 +196,10 @@ node <oxlint bin> -c <tmp>/<group>/.oxlintrc.json --format json -A all
 - Paths are relative to the child cwd, or absolute when they leave it: oxlint
   1.94 exits with "PATH must not contain .." on a relative path with `..`.
 - `--quiet`, `--max-warnings` and `--deny-warnings` are never passed to the
-  child: the CLI applies them itself on the mapped results.
+  child: the CLI applies them itself on the mapped results, with
+  `options.maxWarnings` and `options.denyWarnings` of the root config when the
+  matching flag is absent. A flag wins, as in oxlint: `--max-warnings` replaces
+  `maxWarnings`, and `denyWarnings: true` still applies with it.
 - The CLI checks that `number_of_files` equals the number of paths sent.
 
 ## Mapping back
@@ -215,7 +226,10 @@ attribute selector is stripped only when its bracket is not escaped, so
 `.grid-areas-\[main\]` defines `grid-areas-[main]`. The names are not passed
 to the plugin: after the run, a `no-unknown-classes` finding whose message
 starts with `"<class>"` for a class of the file's `<style>` is dropped, before
-findings are counted. An integration test pins the plugin's message format.
+findings are counted. A wildcard `@utility tab-*` keeps its `*`, which marks
+a prefix: it drops the findings whose quoted class starts with `tab-`, while
+a class literally named `.tab-` stays an exact name. An integration test pins
+the plugin's message format.
 
 ## Output
 
@@ -233,7 +247,7 @@ findings are counted. An integration test pins the plugin's message format.
 
 | Code     | Meaning                                                                                                                                                                 |
 | :------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0        | No error, and warnings within `--max-warnings`                                                                                                                          |
+| 0        | No error, and warnings within `--max-warnings` (or the root config's `options.maxWarnings`)                                                                             |
 | 1        | At least one error, a virtual file oxlint could not parse, or warnings over the limit                                                                                   |
 | 2        | Tool failure: oxlint not found, no config group loads oxlint-tailwindcss, a listed file that cannot be read, missing CSS entry point, unexpected oxlint output or crash |
 | 130, 143 | Interrupted by SIGINT or SIGTERM                                                                                                                                        |
@@ -252,15 +266,24 @@ oxlint-tailwindcss-vue [options] [paths...]
       --max-warnings <n>    exit 1 above n warnings
       --deny-warnings       exit 1 on any warning
       --debug               list skipped attributes with their reason
+                            (default format only), and print the stack of
+                            an unexpected error
   -h, --help
   -V, --version
 ```
+
+An unexpected error while reading one `.vue` file (the virtualizer or the
+style reader) is a tool failure that names the file and asks for a bug report
+at the issues URL of `package.json`; the error is kept as its `cause`, and
+`--debug` prints its stack.
 
 ## Programmatic API
 
 - `virtualize(source, options)` returns the virtual code, the rewritten regions
   and the skipped attributes with their reason.
-- `lint(options)` runs the whole pipeline and returns the mapped diagnostics.
+- `lint(options)` runs the whole pipeline and returns the mapped diagnostics,
+  with `warningOptions`: the `denyWarnings` and `maxWarnings` of the root
+  config's `options`, which the CLI applies.
 
 ## Temp files and signals
 

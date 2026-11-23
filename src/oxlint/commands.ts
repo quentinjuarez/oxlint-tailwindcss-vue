@@ -14,9 +14,11 @@ export type PrintedConfig = {
   rules?: Record<string, unknown>;
   overrides?: {
     files: string[];
+    excludeFiles?: string[];
     jsPlugins?: PluginEntry[];
     rules?: Record<string, unknown>;
   }[];
+  options?: Record<string, unknown>;
 };
 
 export interface FileSelection {

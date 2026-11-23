@@ -45,6 +45,18 @@ describe('createAttributeMatcher', () => {
     expect(match('X', 'ui-head')).toBeUndefined();
   });
 
+  it("matches the user's patterns against the name in kebab and camel case", () => {
+    const camel = createAttributeMatcher({ attributePatterns: ['ClassName$'] });
+    expect(camel('UCard', 'content-class-name')).toBe('setting');
+    expect(camel('UCard', 'contentClassName')).toBe('setting');
+    expect(camel('UCard', 'content-class')).toBeUndefined();
+    const kebab = createAttributeMatcher({
+      attributePatterns: ['^content-class$'],
+    });
+    expect(kebab('UCard', 'contentClass')).toBe('setting');
+    expect(kebab('UCard', 'contentClassName')).toBeUndefined();
+  });
+
   it('keeps class and the class props of Vue components as class', () => {
     const match = createAttributeMatcher({
       attributes: ['class', 'active-class'],

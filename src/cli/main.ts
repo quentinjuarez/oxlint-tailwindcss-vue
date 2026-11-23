@@ -28,6 +28,8 @@ Options:
       --max-warnings <n>    exit 1 above n warnings
       --deny-warnings       exit 1 on any warning
       --debug               list skipped attributes with their reason
+                            (default format only), and print the stack of
+                            an unexpected error
   -h, --help                show this help
   -V, --version             show the version
 
@@ -50,6 +52,7 @@ export async function main(
   argv: readonly string[],
   io: CliIo,
 ): Promise<number> {
+  let debug = false;
   try {
     const parsed = parseCliArgs(argv);
     if (parsed.kind === 'help') {
@@ -60,10 +63,11 @@ export async function main(
       io.stdout.write(`${readVersion()}\n`);
       return 0;
     }
+    ({ debug } = parsed.options);
     return await run(parsed.options, io);
   } catch (error) {
     if (io.signal?.aborted) return interruptedCode(io.signal.reason);
-    return fail(error, io);
+    return fail(error, io, debug);
   }
 }
 
@@ -122,15 +126,21 @@ function interruptedCode(reason: unknown): number {
   return (typeof reason === 'string' && SIGNAL_CODES[reason]) || 130;
 }
 
-function fail(error: unknown, io: CliIo): number {
+function fail(error: unknown, io: CliIo, debug: boolean): number {
   if (error instanceof UsageError) {
     io.stderr.write(`${error.message}\nRun with --help for usage.\n`);
-  } else if (error instanceof ToolError) {
+    return 2;
+  }
+  if (error instanceof ToolError) {
     io.stderr.write(`${error.message}\n`);
     if (error.hint !== undefined) io.stderr.write(`${error.hint}\n`);
   } else {
     const message = error instanceof Error ? error.message : String(error);
     io.stderr.write(`Unexpected error: ${message}\n`);
+  }
+  const unexpected = error instanceof ToolError ? error.cause : error;
+  if (debug && unexpected instanceof Error && unexpected.stack !== undefined) {
+    io.stderr.write(`${unexpected.stack}\n`);
   }
   return 2;
 }

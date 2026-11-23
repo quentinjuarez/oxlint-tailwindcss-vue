@@ -3,7 +3,11 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { deriveConfig, tailwindSettingsOf } from '../../src/config/derive.js';
+import {
+  configOptionsOf,
+  deriveConfig,
+  tailwindSettingsOf,
+} from '../../src/config/derive.js';
 import { ToolError } from '../../src/errors.js';
 import { printConfig } from '../../src/oxlint/commands.js';
 import { resolveOxlint } from '../../src/oxlint/resolve.js';
@@ -185,6 +189,66 @@ describe('deriveConfig', () => {
     ]);
   });
 
+  it('maps the excludeFiles of an override like its files', () => {
+    const dir = join(projects, 'basic');
+    const derived = deriveConfig({
+      printed: {
+        jsPlugins: ['oxlint-tailwindcss'],
+        overrides: [
+          {
+            files: ['src/**'],
+            excludeFiles: ['src/legacy/**', '**/*.gen.vue', '**/*.ts'],
+            rules: { 'tailwindcss/no-unknown-classes': 'off' },
+          },
+          {
+            files: ['**/*.vue'],
+            rules: { 'tailwindcss/no-duplicate-classes': 'warn' },
+          },
+        ],
+      },
+      configFile: join(dir, '.oxlintrc.json'),
+      cwd: dir,
+    }) as Record<string, any>;
+    expect(derived.overrides).toEqual([
+      {
+        files: ['src/**/*.ts'],
+        excludeFiles: ['src/legacy/**/*.ts', '**/*.gen.vue.ts', '**/*.ts.ts'],
+        rules: { 'tailwindcss/no-unknown-classes': 'off' },
+      },
+      {
+        files: ['**/*.vue.ts'],
+        rules: { 'tailwindcss/no-duplicate-classes': 'warn' },
+      },
+    ]);
+    expect(derived.overrides[1]).not.toHaveProperty('excludeFiles');
+  });
+
+  it('writes the given respectEslintDisableDirectives, and no other option', () => {
+    const dir = join(projects, 'basic');
+    const deriveWith = (respectEslintDisableDirectives?: boolean) =>
+      deriveConfig({
+        printed: {
+          jsPlugins: ['oxlint-tailwindcss'],
+          options: {
+            denyWarnings: true,
+            maxWarnings: 2,
+            respectEslintDisableDirectives: true,
+            typeAware: true,
+          },
+        },
+        configFile: join(dir, '.oxlintrc.json'),
+        cwd: dir,
+        respectEslintDisableDirectives,
+      });
+    expect(deriveWith(false)['options']).toEqual({
+      respectEslintDisableDirectives: false,
+    });
+    expect(deriveWith(true)['options']).toEqual({
+      respectEslintDisableDirectives: true,
+    });
+    expect(deriveWith()).not.toHaveProperty('options');
+  });
+
   it('refuses a config without oxlint-tailwindcss', async () => {
     const error = await derive('no-plugin').catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ToolError);
@@ -309,6 +373,32 @@ describe('deriveConfig on awkward input', () => {
     expect(derived['categories']).toEqual({});
   });
 
+  it('counts a bare entry and an entry aliased tailwindcss as one declaration', () => {
+    const derived = deriveConfig({
+      printed: {
+        jsPlugins: [
+          'oxlint-tailwindcss',
+          { name: 'tailwindcss', specifier: 'oxlint-tailwindcss' },
+        ],
+        overrides: [
+          {
+            files: ['**/*.vue'],
+            jsPlugins: [
+              { name: 'tailwindcss', specifier: 'oxlint-tailwindcss' },
+            ],
+          },
+        ],
+        rules: { 'tailwindcss/no-unknown-classes': 'deny' },
+      },
+      configFile,
+      cwd: dir,
+    });
+    expect(derived['jsPlugins']).toHaveLength(1);
+    expect(Object.keys(derived['rules'] as object)).toEqual([
+      'tailwindcss/no-unknown-classes',
+    ]);
+  });
+
   it('refuses oxlint-tailwindcss listed twice and names the entries', () => {
     const run = () =>
       deriveConfig({
@@ -344,6 +434,39 @@ describe('deriveConfig on awkward input', () => {
     expect(() => run()).toThrow(
       expect.objectContaining({ hint: expect.stringContaining('once') }),
     );
+  });
+});
+
+describe('configOptionsOf', () => {
+  it('reads the warning options and respectEslintDisableDirectives', () => {
+    expect(
+      configOptionsOf({
+        options: {
+          denyWarnings: true,
+          maxWarnings: 0,
+          respectEslintDisableDirectives: false,
+          typeAware: true,
+        },
+      }),
+    ).toEqual({
+      denyWarnings: true,
+      maxWarnings: 0,
+      respectEslintDisableDirectives: false,
+    });
+  });
+
+  it('ignores a missing options object and values of the wrong type', () => {
+    expect(configOptionsOf({})).toEqual({});
+    expect(
+      configOptionsOf({
+        options: {
+          denyWarnings: 'yes',
+          maxWarnings: 1.5,
+          respectEslintDisableDirectives: 0,
+        },
+      }),
+    ).toEqual({});
+    expect(configOptionsOf({ options: { maxWarnings: -1 } })).toEqual({});
   });
 });
 

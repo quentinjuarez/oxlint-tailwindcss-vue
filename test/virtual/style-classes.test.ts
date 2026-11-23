@@ -134,12 +134,20 @@ describe('collectStyleClasses', () => {
     ).toEqual(['a', 'b', 'deep', 'shared', 'x']);
   });
 
-  it('keeps @utility names and gives a prefix for a wildcard utility', () => {
+  it('keeps @utility names, and the * that marks a wildcard utility', () => {
     expect(
       css(
-        '@utility tab-4 { tab-size: 4; } @utility tab-* { tab-size: --value(integer); } @utility x-#{$n} { }',
+        '@utility tab-4 { tab-size: 4; } @utility tab-* { tab-size: --value(integer); } @utility x-#{$n} { } .x- { }',
       ),
-    ).toEqual(['tab-', 'tab-4']);
+    ).toEqual(['tab-*', 'tab-4', 'x-']);
+  });
+
+  it('reads class names with non-ASCII characters', () => {
+    expect(css('.café { } .été-x { } .emoji-\u{1F600} { }')).toEqual([
+      'café',
+      'emoji-\u{1F600}',
+      'été-x',
+    ]);
   });
 
   it('reads a quoted url() to its end even when it contains a parenthesis', () => {
@@ -217,7 +225,7 @@ describe('virtualize styleClasses', () => {
       'shared',
     ]);
     expect(virtualize(fixture('styles-tailwind.vue')).styleClasses).toEqual([
-      'tab-',
+      'tab-*',
       'tab-4',
     ]);
   });

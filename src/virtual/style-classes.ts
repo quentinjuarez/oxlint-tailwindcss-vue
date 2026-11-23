@@ -1,8 +1,8 @@
 const LINE_COMMENT_LANGS = new Set(['scss', 'sass', 'less', 'styl', 'stylus']);
 const INDENTED_LANGS = new Set(['sass', 'styl', 'stylus']);
-const IDENT_CHAR = String.raw`(?:[\w\u0080-￿-]|\\[0-9a-fA-F]{1,6}\s?|\\[^\n0-9a-fA-F])`;
+const IDENT_CHAR = String.raw`(?:[\w\u0080-\uFFFF-]|\\[0-9a-fA-F]{1,6}\s?|\\[^\n0-9a-fA-F])`;
 const CLASS = new RegExp(
-  String.raw`\.((?:[_a-zA-Z\u0080-￿-]|\\[0-9a-fA-F]{1,6}\s?|\\[^\n0-9a-fA-F])${IDENT_CHAR}*)(#\{|@\{)?`,
+  String.raw`\.((?:[_a-zA-Z\u0080-\uFFFF-]|\\[0-9a-fA-F]{1,6}\s?|\\[^\n0-9a-fA-F])${IDENT_CHAR}*)(#\{|@\{)?`,
   'g',
 );
 const KEYFRAME_STEPS =
@@ -108,8 +108,7 @@ function openBlock(
 ): void {
   if (header.startsWith('@utility')) {
     const name = UTILITY_NAME.exec(header.slice('@utility'.length).trim())?.[0];
-    if (name && !name.includes('#{') && !name.includes('@{'))
-      names.add(name.endsWith('*') ? name.slice(0, -1) : name);
+    if (name && !name.includes('#{') && !name.includes('@{')) names.add(name);
     open(null);
   } else if (SCOPE.test(header)) {
     open(null, [header.slice('@scope'.length)]);
