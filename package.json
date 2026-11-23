@@ -75,7 +75,7 @@
     "oxlint-tailwindcss": "^1.17.2"
   },
   "engines": {
-    "node": ">=22.12.0"
+    "node": "^22.18.0 || >=24.11.0"
   },
   "packageManager": "yarn@3.8.6"
 }

@@ -314,8 +314,9 @@ only those files are checked:
 
 ## Requirements
 
-- Node.js 22.12.0 or newer. CI runs the tests on Node.js 22.12.0 (Linux) and
-  26.13.1 (Linux and Windows).
+- Node.js 22.18.0 or newer on the 22 line, or 24.11.0 or newer, as
+  `@babel/parser` 8 requires: the LTS lines 22, 24 and 26. CI runs the tests on
+  Node.js 22.18.0 and the latest 24 (Linux), and on 26 (Linux and Windows).
 - oxlint 1.94.0 or newer, the first version whose `--print-config` keeps the
   settings of JS plugins and the options of their rules.
 - oxlint-tailwindcss 1.17.2 or newer.
