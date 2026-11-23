@@ -6,11 +6,17 @@ import { runNode } from './process.js';
 import { parseOxlintReport, type OxlintReport } from './report.js';
 import type { OxlintInstall } from './resolve.js';
 
+export type PluginEntry = string | { name: string; specifier: string };
+
 export type PrintedConfig = {
-  jsPlugins?: (string | { name: string; specifier: string })[];
+  jsPlugins?: PluginEntry[];
   settings?: Record<string, unknown>;
   rules?: Record<string, unknown>;
-  overrides?: { files: string[]; rules?: Record<string, unknown> }[];
+  overrides?: {
+    files: string[];
+    jsPlugins?: PluginEntry[];
+    rules?: Record<string, unknown>;
+  }[];
 };
 
 export interface FileSelection {

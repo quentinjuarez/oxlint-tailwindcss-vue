@@ -1,4 +1,4 @@
-import { resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { ToolError } from './errors.js';
@@ -10,11 +10,13 @@ export interface VirtualSource {
   report: FileReport;
   source: string;
   code: string;
+  styleClasses?: readonly string[];
 }
 
 export interface MappingContext {
   cwd: string;
   root: string;
+  themes?: { cwd: string; paths: readonly string[] };
   files: ReadonlyMap<string, VirtualSource>;
 }
 
@@ -26,9 +28,34 @@ function virtualPathOf(filename: string, cwd: string): string {
     : resolve(cwd, filename);
 }
 
-function withOriginalPaths(message: string, context: MappingContext): string {
-  if (!message.includes(context.root)) return message;
+function isStyleClassReport(
+  diagnostic: OxlintDiagnostic,
+  styleClasses: readonly string[] | undefined,
+): boolean {
+  return (
+    diagnostic.code?.endsWith('(no-unknown-classes)') === true &&
+    styleClasses?.some((name) => diagnostic.message.startsWith(`"${name}"`)) ===
+      true
+  );
+}
+
+function withThemePaths(message: string, context: MappingContext): string {
+  const { themes } = context;
+  if (themes === undefined) return message;
   let rewritten = message;
+  for (const path of themes.paths) {
+    rewritten = rewritten.replaceAll(
+      relative(context.cwd, path),
+      relative(themes.cwd, path),
+    );
+  }
+  return rewritten;
+}
+
+function withOriginalPaths(message: string, context: MappingContext): string {
+  const themed = withThemePaths(message, context);
+  if (!themed.includes(context.root)) return themed;
+  let rewritten = themed;
   for (const [virtualPath, { report }] of context.files) {
     rewritten = rewritten.replaceAll(virtualPath, report.file);
   }
@@ -51,6 +78,7 @@ export function mapDiagnostics(
         `oxlint reported a file it was not asked to check: ${diagnostic.filename ?? 'no file name'}\n${diagnostic.message}`,
       );
     }
+    if (isStyleClassReport(diagnostic, file.styleClasses)) continue;
     const message = withOriginalPaths(diagnostic.message, context);
     // oxlint 1.94 reports a parse error of the virtual file, and a JS plugin
     // crash (its message starts with PLUGIN_CRASH), without a code.

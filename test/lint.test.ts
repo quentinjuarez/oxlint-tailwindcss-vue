@@ -473,6 +473,7 @@ describe('lint on other projects', () => {
       expect(await lint({ cwd: basic, paths: ['src/main.ts'] })).toEqual({
         findings: [],
         files: [],
+        skippedConfigs: [],
       });
       expect(createTempRoot).not.toHaveBeenCalled();
     },
@@ -629,6 +630,217 @@ describe('lint failures', () => {
     await expect(lint({ cwd: basic, signal })).rejects.toBe(signal.reason);
     expect(createTempRoot).not.toHaveBeenCalled();
   });
+});
+
+describe('classes from a component style block', () => {
+  const messageOf = (result: LintResult) =>
+    result.findings.map(({ message }) => message);
+
+  it(
+    'drops the allowlist classes when an override changes the rule severity',
+    async () => {
+      const dir = join(projects, 'override-allowlist');
+      const result = await lint({ cwd: dir });
+      expect(
+        result.findings.map(({ message, severity }) => ({
+          message,
+          severity,
+        })),
+      ).toEqual([
+        {
+          message: '"unknown-legacy" is not a valid Tailwind class.',
+          severity: 'warning',
+        },
+      ]);
+      expect(result.findings[0]?.start).toMatchObject({ line: 2, column: 12 });
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'drops the allowlist classes when the rule is enabled only in an override',
+    async () => {
+      const dir = join(projects, 'override-only-rule');
+      const result = await lint({ cwd: dir });
+      expect(messageOf(result)).toEqual([
+        '"unknown-vue" is not a valid Tailwind class.',
+      ]);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'drops the allowlist classes under a plugin alias',
+    async () => {
+      const dir = project({
+        '.oxlintrc.json': JSON.stringify({
+          jsPlugins: [{ name: 'tw', specifier: 'oxlint-tailwindcss' }],
+          settings: { tailwindcss: { entryPoint: 'src/style.css' } },
+          rules: { 'tw/no-unknown-classes': 'error' },
+        }),
+        'src/style.css': '@import "tailwindcss";\n',
+        'src/A.vue':
+          '<template>\n  <p class="a-own unknown-vue"></p>\n</template>\n<style>\n.a-own { color: red; }\n</style>\n',
+      });
+      const result = await lint({ cwd: dir });
+      expect(messageOf(result)).toEqual([
+        '"unknown-vue" is not a valid Tailwind class.',
+      ]);
+      expect(result.findings[0]?.rule).toBe('tw/no-unknown-classes');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'keeps the plugin message format the filter relies on',
+    async () => {
+      const dir = project({
+        '.oxlintrc.json': JSON.stringify({
+          jsPlugins: ['oxlint-tailwindcss'],
+          settings: { tailwindcss: { entryPoint: 'src/style.css' } },
+          rules: { 'tailwindcss/no-unknown-classes': 'error' },
+        }),
+        'src/style.css': '@import "tailwindcss";\n',
+        'src/Own.vue':
+          '<template>\n  <p class="pinned-class"></p>\n</template>\n<style>\n.pinned-class { color: red; }\n</style>\n',
+        'src/Plain.vue':
+          '<template>\n  <p class="pinned-class"></p>\n</template>\n',
+      });
+      const result = await lint({ cwd: dir });
+      expect(result.findings).toHaveLength(1);
+      expect(result.findings[0]?.file).toBe(join(dir, 'src', 'Plain.vue'));
+      expect(
+        result.findings[0]?.message.startsWith(
+          '"pinned-class" is not a valid Tailwind class.',
+        ),
+      ).toBe(true);
+    },
+    TIMEOUT,
+  );
+});
+
+describe('plugin declared in an override', () => {
+  it(
+    'finds oxlint-tailwindcss in the jsPlugins of an override',
+    async () => {
+      const dir = join(projects, 'override-plugin');
+      const result = await lint({ cwd: dir });
+      expect(located(result, join(dir, 'src', 'A.vue'))).toEqual([
+        {
+          rule: 'tailwindcss/no-unknown-classes',
+          severity: 'error',
+          line: 2,
+          column: 12,
+        },
+      ]);
+      expect(result.findings[0]?.message).toBe(
+        '"unknown-vue" is not a valid Tailwind class.',
+      );
+    },
+    TIMEOUT,
+  );
+});
+
+describe('config groups without the plugin', () => {
+  const withPlugin = {
+    jsPlugins: ['oxlint-tailwindcss'],
+    settings: { tailwindcss: { entryPoint: 'src/style.css' } },
+    rules: { 'tailwindcss/no-unknown-classes': 'error' },
+  };
+  const component = '<template>\n  <p class="unknown-pkg"></p>\n</template>\n';
+
+  it(
+    'lints the groups that load it and reports the others as skipped',
+    async () => {
+      const dir = project({
+        'packages/a/.oxlintrc.json': JSON.stringify(withPlugin),
+        'packages/a/src/style.css': '@import "tailwindcss";\n',
+        'packages/a/src/A.vue': component,
+        'packages/b/.oxlintrc.json': JSON.stringify({
+          rules: { 'no-debugger': 'error' },
+        }),
+        'packages/b/src/B.vue': component,
+        'packages/b/src/C.vue': component,
+      });
+      const result = await lint({ cwd: dir });
+      expect(result.files.map(({ file }) => file)).toEqual([
+        join(dir, 'packages', 'a', 'src', 'A.vue'),
+      ]);
+      expect(result.findings).toHaveLength(1);
+      expect(result.skippedConfigs).toEqual([
+        { config: join(dir, 'packages', 'b', '.oxlintrc.json'), files: 2 },
+      ]);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'fails and names every config when no group loads the plugin',
+    async () => {
+      const dir = project({
+        'packages/a/.oxlintrc.json': '{}',
+        'packages/a/src/A.vue': component,
+        'packages/b/.oxlintrc.json': '{}',
+        'packages/b/src/B.vue': component,
+      });
+      const error = await rejectionOf(lint({ cwd: dir }));
+      expect(error).toBeInstanceOf(ToolError);
+      const { message, hint } = error as ToolError;
+      expect(message).toContain(join(dir, 'packages', 'a', '.oxlintrc.json'));
+      expect(message).toContain(join(dir, 'packages', 'b', '.oxlintrc.json'));
+      expect(hint).toContain('"jsPlugins": ["oxlint-tailwindcss"]');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'keeps the short message for a single config',
+    async () => {
+      const error = await rejectionOf(
+        lint({ cwd: join(projects, 'no-plugin') }),
+      );
+      expect((error as ToolError).message).toBe(
+        'oxlint-tailwindcss is not in the jsPlugins of your oxlint config.',
+      );
+    },
+    TIMEOUT,
+  );
+});
+
+describe('listed paths that cannot be read', () => {
+  it.skipIf(process.platform === 'win32')(
+    'throws a ToolError naming a file under a directory with a backslash',
+    async () => {
+      const dir = project({
+        '.oxlintrc.json': JSON.stringify({
+          jsPlugins: ['oxlint-tailwindcss'],
+          rules: { 'tailwindcss/no-unknown-classes': 'error' },
+        }),
+        'src/a\\b/R.vue': '<template>\n  <p class="p-2"></p>\n</template>\n',
+      });
+      const error = await rejectionOf(lint({ cwd: dir }));
+      expect(error).toBeInstanceOf(ToolError);
+      expect((error as ToolError).message).toContain(
+        join(dir, 'src', 'a', 'b', 'R.vue'),
+      );
+      expect((error as ToolError).hint).toContain('backslash or a line break');
+    },
+    TIMEOUT,
+  );
+});
+
+describe('theme file paths in messages', () => {
+  it(
+    'names the theme file relative to the user cwd',
+    async () => {
+      const dir = join(projects, 'arbitrary-message');
+      const result = await lint({ cwd: dir });
+      expect(result.findings.map(({ message }) => message)).toEqual([
+        `"w-[13px]" uses an arbitrary value. Closest in your theme: w-3 (12px) or w-3.5 (14px). If none fits, add a token to ${join('src', 'style.css')}.`,
+      ]);
+    },
+    TIMEOUT,
+  );
 });
 
 describe('mapDiagnostics', () => {

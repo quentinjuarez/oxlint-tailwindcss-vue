@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 import { dirname, isAbsolute, resolve } from 'node:path';
 
 import { ToolError } from '../errors.js';
-import type { PrintedConfig } from '../oxlint/commands.js';
+import type { PluginEntry, PrintedConfig } from '../oxlint/commands.js';
 
 export interface TailwindSettings {
   attributes: string[];
@@ -14,14 +14,11 @@ export interface DeriveInput {
   printed: PrintedConfig;
   configFile: string;
   cwd: string;
-  files: readonly { virtualPath: string; styleClasses: readonly string[] }[];
 }
 
 const PRIVATE_CALLEE = '__';
 const TAILWIND_PLUGIN = /(^|[\\/])oxlint-tailwindcss([\\/]|$)/;
-const OFF_SEVERITIES = new Set<unknown>(['allow', 'off', 0]);
 
-type PluginEntry = string | { name: string; specifier: string };
 type Json = Record<string, unknown>;
 
 function asRecord(value: unknown): Json {
@@ -48,15 +45,30 @@ export function tailwindSettingsOf(printed: PrintedConfig): TailwindSettings {
   };
 }
 
+function declaredPlugins(printed: PrintedConfig): PluginEntry[] {
+  return [
+    ...(printed.jsPlugins ?? []),
+    ...(printed.overrides ?? []).flatMap(
+      (override) => override.jsPlugins ?? [],
+    ),
+  ].filter((plugin) => TAILWIND_PLUGIN.test(specifierOf(plugin)));
+}
+
+export function loadsTailwindPlugin(printed: PrintedConfig): boolean {
+  return declaredPlugins(printed).length > 0;
+}
+
 function findPlugin(printed: PrintedConfig): PluginEntry {
-  const entries = (printed.jsPlugins ?? []).filter((plugin) =>
-    TAILWIND_PLUGIN.test(specifierOf(plugin)),
-  );
-  const [entry] = entries;
-  if (entries.length > 1) {
+  const byAlias = new Map<string | undefined, PluginEntry>();
+  for (const entry of declaredPlugins(printed)) {
+    const alias = typeof entry === 'string' ? undefined : entry.name;
+    if (!byAlias.has(alias)) byAlias.set(alias, entry);
+  }
+  const [entry] = byAlias.values();
+  if (byAlias.size > 1) {
     throw new ToolError(
-      `oxlint-tailwindcss is listed ${entries.length} times in jsPlugins: ${entries.map((plugin) => JSON.stringify(plugin)).join(', ')}`,
-      'Keep one jsPlugins entry for oxlint-tailwindcss in your oxlint config.',
+      `oxlint-tailwindcss is declared with ${byAlias.size} different aliases: ${[...byAlias.values()].map((plugin) => JSON.stringify(plugin)).join(', ')}`,
+      'Declare oxlint-tailwindcss once in your oxlint config, with a single alias.',
     );
   }
   if (entry === undefined) {
@@ -99,16 +111,8 @@ function globsOf(value: unknown): string[] {
   return typeof value === 'string' ? [value] : strings(value);
 }
 
-function escapeGlob(path: string): string {
-  return path.replaceAll(/[\\[\](){}!*?]/g, String.raw`\$&`);
-}
-
-function isOff(value: unknown): boolean {
-  return OFF_SEVERITIES.has(Array.isArray(value) ? value[0] : value);
-}
-
 export function deriveConfig(input: DeriveInput): Record<string, unknown> {
-  const { printed, configFile, cwd, files } = input;
+  const { printed, configFile, cwd } = input;
   const configDir = dirname(configFile);
   const plugin = findPlugin(printed);
   const alias = typeof plugin === 'string' ? undefined : plugin.name;
@@ -170,36 +174,6 @@ export function deriveConfig(input: DeriveInput): Record<string, unknown> {
   };
 
   const rules = onlyTailwind(printed.rules);
-  const unknownClasses = `${prefix}no-unknown-classes`;
-  const base = rules[unknownClasses];
-  const allowlistOverrides =
-    base === undefined || isOff(base)
-      ? []
-      : files
-          .filter((file) => file.styleClasses.length > 0)
-          .map((file) => {
-            const [severity, options, ...rest] = Array.isArray(base)
-              ? (base as unknown[])
-              : [base];
-            const optionBag = asRecord(options);
-            const allowlist = [
-              ...new Set([
-                ...strings(optionBag['allowlist']),
-                ...file.styleClasses,
-              ]),
-            ];
-            return {
-              files: [escapeGlob(file.virtualPath)],
-              rules: {
-                [unknownClasses]: [
-                  severity,
-                  { ...optionBag, allowlist },
-                  ...rest,
-                ],
-              },
-            };
-          });
-
   const userOverrides = (printed.overrides ?? [])
     .map((override) => ({
       files: override.files.map(virtualGlob),
@@ -215,7 +189,7 @@ export function deriveConfig(input: DeriveInput): Record<string, unknown> {
     ],
     settings: { tailwindcss: settings },
     rules,
-    overrides: [...allowlistOverrides, ...userOverrides],
+    overrides: userOverrides,
     ignorePatterns: [],
   };
 }

@@ -1,0 +1,5 @@
+{
+  "jsPlugins": ["oxlint-tailwindcss"],
+  "settings": { "tailwindcss": { "entryPoint": "src/style.css" } },
+  "rules": { "tailwindcss/no-arbitrary-value": "error" }
+}

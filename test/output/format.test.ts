@@ -35,6 +35,7 @@ function finding(overrides: Partial<Finding> = {}): Finding {
 }
 
 const result: LintResult = {
+  skippedConfigs: [],
   findings: [
     finding(),
     finding({
@@ -95,7 +96,11 @@ describe('default format', () => {
   });
 
   it('uses singular nouns for one finding in one file', () => {
-    const one: LintResult = { findings: [finding()], files: result.files };
+    const one: LintResult = {
+      skippedConfigs: [],
+      findings: [finding()],
+      files: result.files,
+    };
     expect(formatReport(one, 'default', plain)).toContain(
       '1 error, 0 warnings in 1 file\n',
     );
@@ -103,11 +108,15 @@ describe('default format', () => {
 
   it('says so when nothing was found', () => {
     expect(
-      formatReport({ findings: [], files: result.files }, 'default', plain),
+      formatReport(
+        { skippedConfigs: [], findings: [], files: result.files },
+        'default',
+        plain,
+      ),
     ).toBe('No problems found in 3 files.\n');
     expect(
       formatReport(
-        { findings: [], files: result.files.slice(0, 1) },
+        { skippedConfigs: [], findings: [], files: result.files.slice(0, 1) },
         'default',
         plain,
       ),
@@ -121,6 +130,24 @@ describe('default format', () => {
     expect(output.endsWith('2 errors, 1 warning in 2 files\n')).toBe(true);
   });
 
+  it('lists configs without the plugin with --debug', () => {
+    const skipped: LintResult = {
+      ...result,
+      skippedConfigs: [
+        { config: join(cwd, 'packages', 'b', '.oxlintrc.json'), files: 2 },
+        { config: join(cwd, '.oxlintrc.json'), files: 1 },
+      ],
+    };
+    const output = formatReport(skipped, 'default', { ...plain, debug: true });
+    expect(output).toContain(
+      'skipped 2 .vue files: packages/b/.oxlintrc.json does not load oxlint-tailwindcss\n',
+    );
+    expect(output).toContain(
+      'skipped 1 .vue file: .oxlintrc.json does not load oxlint-tailwindcss\n',
+    );
+    expect(formatReport(skipped, 'default', plain)).not.toContain('skipped');
+  });
+
   it('colors only when asked', () => {
     expect(formatReport(result, 'default', plain)).not.toContain('\u001B[');
     const colored = formatReport(result, 'default', { ...plain, color: true });
@@ -132,6 +159,7 @@ describe('default format', () => {
 
   it('lists files that were not checked', () => {
     const unchecked: LintResult = {
+      skippedConfigs: [],
       findings: [],
       files: [
         ...result.files,
@@ -155,6 +183,7 @@ describe('default format', () => {
 
   it('drops warnings with --quiet but keeps files that were not checked', () => {
     const warningsOnly: LintResult = {
+      skippedConfigs: [],
       findings: [result.findings[1] as Finding],
       files: [
         ...result.files,
@@ -194,6 +223,7 @@ describe('json format', () => {
 
   it('keeps help and url when present, and honors --quiet', () => {
     const rich: LintResult = {
+      skippedConfigs: [],
       findings: [
         finding({ help: 'Remove it.', url: 'https://example.com/rule' }),
         result.findings[1] as Finding,
@@ -212,6 +242,7 @@ describe('json format', () => {
 
   it('reports a file that was not checked as an error', () => {
     const unchecked: LintResult = {
+      skippedConfigs: [],
       findings: [],
       files: [
         { file: broken, skipped: [], notices: [], notChecked: 'Bad file.' },
@@ -248,6 +279,7 @@ describe('github format', () => {
 
   it('escapes message and property values', () => {
     const tricky: LintResult = {
+      skippedConfigs: [],
       findings: [
         finding({
           file: join(cwd, 'a,b:c%.vue'),
@@ -263,6 +295,7 @@ describe('github format', () => {
 
   it('reports a file that was not checked and honors --quiet', () => {
     const unchecked: LintResult = {
+      skippedConfigs: [],
       findings: [result.findings[1] as Finding],
       files: [
         { file: broken, skipped: [], notices: [], notChecked: 'Bad file.' },
@@ -281,11 +314,14 @@ describe('exitCodeFor', () => {
   const files = result.files;
 
   it('is 1 with an error', () => {
-    expect(exitCodeFor({ findings: [error], files }, base)).toBe(1);
+    expect(
+      exitCodeFor({ skippedConfigs: [], findings: [error], files }, base),
+    ).toBe(1);
   });
 
   it('is 1 with a file that was not checked', () => {
     const unchecked = {
+      skippedConfigs: [],
       findings: [],
       files: [{ file: broken, skipped: [], notices: [], notChecked: 'x' }],
     };
@@ -293,12 +329,16 @@ describe('exitCodeFor', () => {
   });
 
   it('is 0 with warnings only', () => {
-    expect(exitCodeFor({ findings: [warning], files }, base)).toBe(0);
-    expect(exitCodeFor({ findings: [], files: [] }, base)).toBe(0);
+    expect(
+      exitCodeFor({ skippedConfigs: [], findings: [warning], files }, base),
+    ).toBe(0);
+    expect(
+      exitCodeFor({ skippedConfigs: [], findings: [], files: [] }, base),
+    ).toBe(0);
   });
 
   it('is 1 above --max-warnings', () => {
-    const two = { findings: [warning, warning], files };
+    const two = { skippedConfigs: [], findings: [warning, warning], files };
     expect(exitCodeFor(two, { ...base, maxWarnings: 2 })).toBe(0);
     expect(exitCodeFor(two, { ...base, maxWarnings: 1 })).toBe(1);
   });
@@ -306,7 +346,7 @@ describe('exitCodeFor', () => {
   it('is 1 with --deny-warnings and a warning', () => {
     expect(
       exitCodeFor(
-        { findings: [warning], files },
+        { skippedConfigs: [], findings: [warning], files },
         { ...base, denyWarnings: true },
       ),
     ).toBe(1);
@@ -315,7 +355,7 @@ describe('exitCodeFor', () => {
   it('ignores warnings when quiet', () => {
     expect(
       exitCodeFor(
-        { findings: [warning], files },
+        { skippedConfigs: [], findings: [warning], files },
         { quiet: true, denyWarnings: true, maxWarnings: 0 },
       ),
     ).toBe(0);

@@ -1,0 +1,11 @@
+{
+  "jsPlugins": ["oxlint-tailwindcss"],
+  "settings": { "tailwindcss": { "entryPoint": "src/style.css" } },
+  "rules": {},
+  "overrides": [
+    {
+      "files": ["**/*.vue"],
+      "rules": { "tailwindcss/no-unknown-classes": "error" }
+    }
+  ]
+}

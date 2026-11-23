@@ -5,6 +5,7 @@ export type {
   LintOptions,
   LintResult,
   Located,
+  SkippedConfig,
 } from './lint.js';
 export type { Position } from './positions.js';
 export type {

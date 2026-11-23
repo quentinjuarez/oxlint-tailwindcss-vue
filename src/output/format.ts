@@ -88,6 +88,11 @@ function formatDefault(
     );
   }
   if (options.debug) {
+    for (const skipped of result.skippedConfigs) {
+      lines.push(
+        `skipped ${plural(skipped.files, '.vue file')}: ${displayPath(skipped.config, cwd)} does not load oxlint-tailwindcss`,
+      );
+    }
     for (const report of result.files) {
       const path = displayPath(report.file, cwd);
       for (const skip of report.skipped) {

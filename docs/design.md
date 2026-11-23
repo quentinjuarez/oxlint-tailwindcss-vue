@@ -64,7 +64,9 @@ silently. The usual workaround is to keep ESLint for templates only.
    `.ts` file (see "Virtual file contract").
 4. **Derive a config** per group of files sharing a config and a CSS entry
    point (see "Derived config").
-5. **Run oxlint once per group** on the virtual files in a temp dir.
+5. **Run oxlint once per group** on the virtual files in a temp dir. A group
+   whose config loads oxlint-tailwindcss nowhere is not linted, and `--debug`
+   prints `skipped <N> .vue files: <config> does not load oxlint-tailwindcss`.
 6. **Map back** each diagnostic to the original file, line and column.
 7. **Report and exit** (see "Output" and "Exit codes").
 
@@ -130,14 +132,17 @@ can interfere:
 
 - `plugins: []`, `categories: {}`, `ignorePatterns: []`.
 - `jsPlugins`: the absolute path of the user's oxlint-tailwindcss, resolved
-  from the config directory with the import conditions.
+  from the config directory with the import conditions, declared once at the
+  top level with the user's alias. The plugin is looked up in the printed
+  top-level `jsPlugins` and in every `overrides[].jsPlugins`; declarations with
+  the same alias count as one, different aliases are a tool failure.
 - `settings.tailwindcss`: the user's block, with `entryPoint` made absolute and
   the private callee added.
 - `rules`: only the `tailwindcss/*` rules (or the user's alias), with option
   paths made absolute.
-- `overrides`: first, one per file with the classes from its `<style>` blocks
-  added to `no-unknown-classes`' `allowlist`; then the user's overrides reduced
-  to the Tailwind rules. The user's overrides come last so they win.
+- `overrides`: the user's overrides reduced to the Tailwind rules. No per-file
+  allowlist override is written: it would be replaced by any user override of
+  `no-unknown-classes` (see "Classes defined in `<style>`").
 - Every user glob, in override `files` and in `entryPoint` mapping `files`,
   gets `.ts` appended, or `/*.ts` after a final `**` or `/` (oxlint does not
   recurse on `**.ts`). Only virtual files are linted, and the suffix keeps
@@ -178,7 +183,8 @@ offset to a UTF-16 index through the virtual text, which equals the index in
 the `.vue` file, then computes the line and column on the original text. Paths
 come back relative to the child cwd, absolute, or as `file://` URLs (JetBrains
 terminals); all three are handled. A message that contains a virtual path is
-rewritten to the original path.
+rewritten to the original path. A theme file path the plugin wrote relative to
+the child cwd is rewritten relative to the user's cwd.
 
 ## Classes defined in `<style>`
 
@@ -186,7 +192,10 @@ A tolerant tokenizer reads the `<style>` blocks: it skips comments (and `//` in
 SCSS, Less and Stylus), strings and `url()`, splits selectors on top-level
 commas, resolves `&` against the parent selector, decodes CSS escapes, keeps
 `@utility` names, and counts only `:global()` names in CSS modules. The names
-feed the per-file `allowlist` override.
+are not passed to the plugin: after the run, a `no-unknown-classes` finding
+whose message starts with `"<class>"` for a class of the file's `<style>` is
+dropped, before findings are counted. An integration test pins the plugin's
+message format.
 
 ## Output
 
@@ -201,12 +210,12 @@ feed the per-file `allowlist` override.
 
 ## Exit codes
 
-| Code     | Meaning                                                                                                                          |
-| :------- | :------------------------------------------------------------------------------------------------------------------------------- |
-| 0        | No error, and warnings within `--max-warnings`                                                                                   |
-| 1        | At least one error, a virtual file oxlint could not parse, or warnings over the limit                                            |
-| 2        | Tool failure: oxlint not found, no oxlint-tailwindcss in `jsPlugins`, missing CSS entry point, unexpected oxlint output or crash |
-| 130, 143 | Interrupted by SIGINT or SIGTERM                                                                                                 |
+| Code     | Meaning                                                                                                                                                                 |
+| :------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0        | No error, and warnings within `--max-warnings`                                                                                                                          |
+| 1        | At least one error, a virtual file oxlint could not parse, or warnings over the limit                                                                                   |
+| 2        | Tool failure: oxlint not found, no config group loads oxlint-tailwindcss, a listed file that cannot be read, missing CSS entry point, unexpected oxlint output or crash |
+| 130, 143 | Interrupted by SIGINT or SIGTERM                                                                                                                                        |
 
 ## Command line
 
@@ -280,7 +289,7 @@ oxlint-tailwindcss 1.17.2, tailwindcss 4.3.5, Vue 3.5.44, @vue/compiler-sfc
   `default`, `json` and `github` formats (exit 1), and no false positive. The
   20 unknown-class reports of the spike (`mat`, `checker`, `sheet-fade` and
   others) are classes each component defines in its own `<style>`; the
-  per-file allowlist removes them.
+  filter on the file's `<style>` classes removes them.
 - 0.63 to 0.93 s wall clock over six default runs (0.93 s for the first),
   against 0.45 s for the native oxlint run, which reports no diagnostic on its
   386 files.

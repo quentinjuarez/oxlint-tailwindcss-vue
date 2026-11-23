@@ -9,7 +9,11 @@ import {
   sep,
 } from 'node:path';
 
-import { deriveConfig, tailwindSettingsOf } from './config/derive.js';
+import {
+  deriveConfig,
+  loadsTailwindPlugin,
+  tailwindSettingsOf,
+} from './config/derive.js';
 import { ToolError } from './errors.js';
 import { mapDiagnostics, type VirtualSource } from './map-diagnostics.js';
 import {
@@ -61,9 +65,21 @@ export interface FileReport {
   notChecked?: string;
 }
 
+export interface SkippedConfig {
+  config: string;
+  files: number;
+}
+
 export interface LintResult {
   findings: Finding[];
   files: FileReport[];
+  skippedConfigs: SkippedConfig[];
+}
+
+interface GroupResult {
+  findings: Finding[];
+  files: FileReport[];
+  skipped?: SkippedConfig;
 }
 
 interface GroupRun {
@@ -106,13 +122,15 @@ async function run(options: LintOptions): Promise<LintResult> {
   );
   const listed = await listLintedFiles(oxlint, cwd, selectionOf(options));
   signal?.throwIfAborted();
-  if (listed.length === 0) return { findings: [], files: [] };
+  if (listed.length === 0)
+    return { findings: [], files: [], skippedConfigs: [] };
   const groups = groupByConfig([...new Set(listed)], userConfig);
 
   const temp = createTempRoot();
   try {
     const findings: Finding[] = [];
     const files: FileReport[] = [];
+    const skippedConfigs: SkippedConfig[] = [];
     for (const [index, [configFile, groupFiles]] of [...groups].entries()) {
       // oxlint already uses every core; groups run one after the other.
       // oxlint-disable-next-line no-await-in-loop
@@ -126,14 +144,35 @@ async function run(options: LintOptions): Promise<LintResult> {
       });
       findings.push(...result.findings);
       files.push(...result.files);
+      if (result.skipped !== undefined) skippedConfigs.push(result.skipped);
     }
+    if (skippedConfigs.length === groups.size)
+      throw noPluginError(skippedConfigs);
     return {
       findings: findings.toSorted(compareFindings),
       files: files.toSorted((a, b) => compareText(a.file, b.file)),
+      skippedConfigs: skippedConfigs.toSorted((a, b) =>
+        compareText(a.config, b.config),
+      ),
     };
   } finally {
     temp.remove();
   }
+}
+
+function noPluginError(skipped: readonly SkippedConfig[]): ToolError {
+  const hint = 'Add "jsPlugins": ["oxlint-tailwindcss"] to your oxlint config.';
+  const [only] = skipped;
+  if (skipped.length === 1 && only !== undefined) {
+    return new ToolError(
+      'oxlint-tailwindcss is not in the jsPlugins of your oxlint config.',
+      hint,
+    );
+  }
+  return new ToolError(
+    `oxlint-tailwindcss is not in the jsPlugins of any oxlint config:\n${skipped.map(({ config }) => `  ${config}`).join('\n')}`,
+    hint,
+  );
 }
 
 function selectionOf(options: LintOptions): FileSelection {
@@ -165,16 +204,23 @@ function groupByConfig(
   });
 }
 
-async function lintGroup(group: GroupRun): Promise<LintResult> {
+async function lintGroup(group: GroupRun): Promise<GroupResult> {
   const { oxlint, cwd, configFile, dir, signal } = group;
   const printed = await printConfig(oxlint, cwd, configFile);
   signal?.throwIfAborted();
+  if (!loadsTailwindPlugin(printed)) {
+    return {
+      findings: [],
+      files: [],
+      skipped: { config: configFile, files: group.files.length },
+    };
+  }
   const configDir = dirname(configFile);
   const settings = tailwindSettingsOf(printed);
   const files: FileReport[] = [];
   const sources = new Map<string, VirtualSource & { styleClasses: string[] }>();
   for (const file of group.files) {
-    const source = readFileSync(file, 'utf8');
+    const source = readSource(file);
     const { code, skipped, notices, styleClasses } = virtualize(
       source,
       settings,
@@ -206,10 +252,6 @@ async function lintGroup(group: GroupRun): Promise<LintResult> {
     printed,
     configFile,
     cwd,
-    files: [...sources].map(([virtualPath, { styleClasses }]) => ({
-      virtualPath: relative(dir, virtualPath).split(sep).join('/'),
-      styleClasses,
-    })),
   });
   const configPath = join(dir, '.oxlintrc.json');
   mkdirSync(dir, { recursive: true });
@@ -228,9 +270,27 @@ async function lintGroup(group: GroupRun): Promise<LintResult> {
       cwd: childCwd,
       root: dir,
       files: sources,
+      themes: { cwd, paths: absolutePathsIn(derived) },
     }),
     files,
   };
+}
+
+function absolutePathsIn(value: unknown): string[] {
+  if (typeof value === 'string') return isAbsolute(value) ? [value] : [];
+  if (typeof value !== 'object' || value === null) return [];
+  return Object.values(value).flatMap(absolutePathsIn);
+}
+
+function readSource(file: string): string {
+  try {
+    return readFileSync(file, 'utf8');
+  } catch (error) {
+    throw new ToolError(
+      `Cannot read ${file}: ${error instanceof Error ? error.message : String(error)}`,
+      'File or directory names containing a backslash or a line break are not supported.',
+    );
+  }
 }
 
 function locator(source: string): (offset: number) => Located {
