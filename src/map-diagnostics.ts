@@ -1,4 +1,4 @@
-import { relative, resolve } from 'node:path';
+import { relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { ToolError } from './errors.js';
@@ -44,10 +44,11 @@ function withThemePaths(message: string, context: MappingContext): string {
   if (themes === undefined) return message;
   let rewritten = message;
   for (const path of themes.paths) {
-    rewritten = rewritten.replaceAll(
-      relative(context.cwd, path),
-      relative(themes.cwd, path),
-    );
+    const written = relative(context.cwd, path);
+    const original = relative(themes.cwd, path);
+    for (const variant of new Set([written, written.replaceAll(sep, '/')])) {
+      rewritten = rewritten.replaceAll(variant, original);
+    }
   }
   return rewritten;
 }

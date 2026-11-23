@@ -950,6 +950,38 @@ describe('mapDiagnostics', () => {
     expect(warning).not.toHaveProperty('url');
   });
 
+  it('rewrites theme paths written with either separator', () => {
+    const theme = join(
+      tmpdir(),
+      'project',
+      'packages',
+      'app',
+      'src',
+      'style.css',
+    );
+    const { context } = setup();
+    const withThemes = {
+      ...context,
+      themes: {
+        cwd: join(tmpdir(), 'project', 'packages', 'app'),
+        paths: [theme],
+      },
+    };
+    const written = relative(cwd, theme);
+    const messages = [written, written.split(sep).join('/')].map(
+      (path) => `Add a token to ${path}.`,
+    );
+    const findings = mapDiagnostics(
+      messages.map((message) => diagnostic({ message })),
+      withThemes,
+    );
+    for (const finding of findings) {
+      expect(finding.message).toBe(
+        `Add a token to ${join('src', 'style.css')}.`,
+      );
+    }
+  });
+
   it('rewrites virtual paths inside messages', () => {
     const [finding] = mapDiagnostics(
       [diagnostic({ message: `No mapping matched \`${virtualPath}\`.` })],
