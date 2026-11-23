@@ -179,16 +179,16 @@ removed after the run, even on Ctrl+C.
 
 ## Results on a real Vue app
 
-On 2026-11-22, oxlint-tailwindcss-vue 0.1.0 checked paint-emoji, the author's
+On 2026-11-23, oxlint-tailwindcss-vue 0.1.0 checked paint-emoji, the author's
 Vue 3 and Tailwind CSS 4 monorepo (a private repository), from its root:
 
-| Measure                                               | Result                                                                               |
-| :---------------------------------------------------- | :----------------------------------------------------------------------------------- |
-| `.vue` files                                          | 93                                                                                   |
-| Class attributes checked                              | 621: 577 static, 44 bound, none skipped                                              |
-| Findings                                              | 1 error and 7 warnings in 7 files, no false positive                                 |
-| oxlint with oxlint-tailwindcss on the same repository | 386 files, 0 findings, exit 0                                                        |
-| Wall-clock time of a full run                         | 0.63 to 0.93 s over six runs (0.93 s for the first), against 0.45 s for oxlint alone |
+| Measure                                               | Result                                                                                       |
+| :---------------------------------------------------- | :------------------------------------------------------------------------------------------- |
+| `.vue` files                                          | 93                                                                                           |
+| Class attributes checked                              | 621: 577 static, 44 bound, none skipped                                                      |
+| Findings                                              | 1 error and 7 warnings in 7 files, no false positive                                         |
+| oxlint with oxlint-tailwindcss on the same repository | 386 files, 0 findings, exit 0                                                                |
+| Wall-clock time of a full run                         | 1.19 to 1.30 s over six runs (1.30 s for the first), against 0.72 to 0.85 s for oxlint alone |
 
 The 8 findings: `break-words`, deprecated in Tailwind CSS v4 (the error);
 `[scrollbar-width:none]` twice, `text-[length:var(--emoji-px)]` and `h-[1lh]`
