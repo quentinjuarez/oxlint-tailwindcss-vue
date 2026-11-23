@@ -6,6 +6,20 @@ export interface Position {
   byteOffset: number;
 }
 
+const BYTE_ORDER_MARK = 0xfeff;
+
+// Editors hide a byte order mark, so line 1 starts after it. Byte columns keep
+// counting its three bytes, as oxlint does.
+export function columnOf(
+  text: string,
+  lineStart: number,
+  offset: number,
+): number {
+  const visibleStart =
+    lineStart === 0 && text.charCodeAt(0) === BYTE_ORDER_MARK ? 1 : lineStart;
+  return Math.max(offset - visibleStart, 0) + 1;
+}
+
 function utf8Length(codePoint: number): number {
   if (codePoint < 0x80) return 1;
   if (codePoint < 0x800) return 2;
@@ -79,7 +93,7 @@ export function createPositionMapper(
     const byteOffset = byteOffsets[offset] as number;
     return {
       line: line + 1,
-      column: offset - lineStart + 1,
+      column: columnOf(original, lineStart, offset),
       byteColumn: byteOffset - (byteOffsets[lineStart] as number) + 1,
       offset,
       byteOffset,

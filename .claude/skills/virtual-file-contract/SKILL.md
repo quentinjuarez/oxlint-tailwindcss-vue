@@ -33,8 +33,17 @@ is never bent to make a case pass: the attribute is skipped with a reason.
 
 ## Rewrites
 
-The private callee is `__`; the CLI adds it to `settings.tailwindcss.callees`.
-The same rules apply to every checked attribute, not only `class`.
+There are two private callees, and the same placement rules apply to both:
+
+- `__` wraps every static value, and the bound values of `class` and of Vue's
+  class props on their components. The CLI adds it to
+  `settings.tailwindcss.callees`.
+- `___` wraps the bound value of an attribute checked only because of
+  `settings.tailwindcss.attributes` or `attributePatterns`. The CLI registers
+  it as `calleeExtractors: { ___: 'cva' }`: the cva extractor reads an object
+  argument's values and never its keys, which is how oxlint-tailwindcss reads
+  an object in a JSX attribute. A string reads the same under both callees,
+  so static values keep `__`. `;___(` needs five free slots before the value.
 
 | Source                                 | Virtual                    | Notes                                                                                                         |
 | :------------------------------------- | :------------------------- | :------------------------------------------------------------------------------------------------------------ |
@@ -42,6 +51,7 @@ The same rules apply to every checked attribute, not only `class`.
 | value spanning lines                   | template literal           | line breaks copied as they are, `\r` included (invariant 2)                                                   |
 | value with a backtick or `${`          | original quotes kept       | only on one line without a backslash, else skip `invalid-escape`                                              |
 | `:class="expr"`, `v-bind:class="expr"` | `;__(expr)`                | expression copied raw; `)` replaces the closing quote                                                         |
+| `:ui="expr"`, `ui` from settings       | `;___(expr)`               | as `:class`, with the second callee                                                                           |
 | `class=a` (unquoted)                   | backticks around the value | needs free slots on both sides, else skip `no-room`                                                           |
 
 Wrapper characters are placed right to left, ending just before the value, on
@@ -76,12 +86,17 @@ before it: `<p ui="a">` becomes ``  ;__(`a`)`` (two blanks first).
   - on `RouterLink`, `router-link`, `NuxtLink` and `nuxt-link`:
     `active-class`, `exact-active-class`.
 - Every name in the user's `settings.tailwindcss.attributes`, and every name
-  matching `attributePatterns`.
+  matching `attributePatterns`. Their objects are read like the plugin reads
+  a JSX attribute: the values, never the keys; the values of a nested object
+  are not read (its quoted keys are, as in a `:class` object). Keys named
+  `variants`, `compoundVariants` and `defaultVariants` get the cva reading
+  instead (a known 0.1 limitation, pinned by an integration test).
 - Unquoted object keys (`:class="{ active: x }"`) are copied, but
   oxlint-tailwindcss reads only quoted keys, so they are not checked;
-  `--debug` lists them for `:class` and `v-bind:class` only (see the open
-  question in docs/design.md). On other attributes, such as a `:ui` object,
-  keys name slots, not classes.
+  `--debug` lists them for `:class` and `v-bind:class` only, for an object at
+  the top of the value or directly in an array there (see the open question
+  in docs/design.md). On other attributes, such as a `:ui` object, keys name
+  slots, not classes.
 - Never: dynamic arguments (`:[name]`), `v-bind="{ class }"` (0.1), other
   directives with a `class` argument (`@class`, `v-model:class`), anything
   inside `v-pre` except static attributes.
@@ -118,6 +133,14 @@ stays blank. Every other comment stays blank.
 - Use `@vue/compiler-sfc` ^3.5 from this package's dependencies, never the
   project's `vue/compiler-sfc` (Vue 2.7 has another API).
 
+## Columns
+
+`default`, `github` and `--debug` count UTF-16 units from the start of the
+line. On line 1, a byte order mark (U+FEFF) is not counted: editors hide it.
+Offsets stay indices into the source string, and `json` keeps oxlint's byte
+offsets and byte columns, which count the three bytes of the mark, as oxlint
+does on a script.
+
 ## Classes from `<style>`
 
 Read with the tolerant tokenizer, never a regex over the raw text: skip
@@ -125,7 +148,11 @@ comments (and `//` in SCSS, Less, Stylus), strings and `url()`; split selectors
 on top-level commas; resolve `&` against the parent selector; decode CSS
 escapes (`.md\:flex` is `md:flex`); keep `@utility` names (a `-*` utility gives
 a prefix); in CSS modules count only `:global()` names. Drop names built with
-interpolation (`#{}`, `@{}`).
+interpolation (`#{}`, `@{}`). `@scope (<roots>) to (<limits>)`, with or without
+`to`, defines the classes of both selector lists, next to the classes inside
+the block; `:scope` names no class. Strip only unescaped attribute selectors:
+`.grid-areas-\[main\]` defines `grid-areas-[main]`, and `.a[data-x="]"]`
+defines only `a`.
 
 ## Adding a case
 

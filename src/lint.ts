@@ -27,7 +27,7 @@ import {
   resolveOxlint,
   type OxlintInstall,
 } from './oxlint/resolve.js';
-import type { Position } from './positions.js';
+import { columnOf, type Position } from './positions.js';
 import { createTempRoot, pruneStaleTempRoots } from './temp.js';
 import type { Notice, Skip } from './virtual/types.js';
 import { virtualize } from './virtual/virtualize.js';
@@ -306,7 +306,7 @@ function locator(source: string): (offset: number) => Located {
     line = Math.max(line, 0);
     return {
       line: line + 1,
-      column: offset - (lineStarts[line] as number) + 1,
+      column: columnOf(source, lineStarts[line] as number, offset),
     };
   };
 }

@@ -4,20 +4,29 @@ import type {
   SimpleExpressionNode,
 } from '@vue/compiler-core';
 
-import type { AttributeMatcher } from './attributes.js';
+import type { AttributeKind, AttributeMatcher } from './attributes.js';
 import type { VirtualBuffer } from './buffer.js';
-import { writeCall } from './call.js';
+import { CLASS_CALLEE, OBJECT_VALUES_CALLEE, writeCall } from './call.js';
 import type { Notice, SkipCode, SourceSpan } from './types.js';
 
 const SIMPLE_EXPRESSION = 4 as NodeTypes.SIMPLE_EXPRESSION;
+const CALLEES: Record<AttributeKind, string> = {
+  class: CLASS_CALLEE,
+  setting: OBJECT_VALUES_CALLEE,
+};
 
 type BabelNode = Exclude<SimpleExpressionNode['ast'], false | null | undefined>;
+
+export interface BoundValue {
+  exp: SimpleExpressionNode;
+  kind: AttributeKind;
+}
 
 export function checkedExpression(
   prop: DirectiveNode,
   tag: string,
-  isChecked: AttributeMatcher,
-): SimpleExpressionNode | undefined {
+  matchAttribute: AttributeMatcher,
+): BoundValue | undefined {
   const { arg, exp } = prop;
   if (
     prop.name !== 'bind' ||
@@ -26,20 +35,21 @@ export function checkedExpression(
     exp?.type !== SIMPLE_EXPRESSION
   )
     return undefined;
-  return isChecked(tag, arg.content) ? exp : undefined;
+  const kind = matchAttribute(tag, arg.content);
+  return kind === undefined ? undefined : { exp, kind };
 }
 
 export function rewriteBound(
   buffer: VirtualBuffer,
   source: string,
   prop: DirectiveNode,
-  exp: SimpleExpressionNode,
+  { exp, kind }: BoundValue,
 ): number | SkipCode {
   if (exp.ast === false) return 'invalid-expression';
   if (exp.loc.source !== exp.content) return 'entity';
   const start = exp.loc.start.offset;
   const end = exp.loc.end.offset;
-  return writeCall(buffer, source, prop.loc, start, end, () =>
+  return writeCall(buffer, source, CALLEES[kind], prop.loc, start, end, () =>
     buffer.copy(start, end),
   );
 }

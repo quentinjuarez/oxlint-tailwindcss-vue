@@ -3,17 +3,19 @@ import type { SourceLocation } from '@vue/compiler-core';
 import type { VirtualBuffer } from './buffer.js';
 import type { SkipCode } from './types.js';
 
-const CALLEE = '__';
+export const CLASS_CALLEE = '__';
+export const OBJECT_VALUES_CALLEE = '___';
 const HTML_WHITESPACE = /[\t\n\f\r ]/;
 const BEFORE_TAG_END = /[\t\n\f\r /]/;
 
 // Wrapper characters stay inside the attribute, the whitespace before it and
 // the run after it up to the next attribute or the end of the tag (contract
-// invariant 3): `;__(` ends just before `valueStart`, `)` takes the first free
-// slot from `valueEnd`.
+// invariant 3): `;`, the callee and `(` end just before `valueStart`, `)`
+// takes the first free slot from `valueEnd`.
 export function writeCall(
   buffer: VirtualBuffer,
   source: string,
+  callee: string,
   attribute: SourceLocation,
   valueStart: number,
   valueEnd: number,
@@ -24,7 +26,7 @@ export function writeCall(
     !buffer.placeCall(
       whitespaceStart(source, attribute.start.offset),
       valueStart,
-      CALLEE,
+      callee,
     ) ||
     !buffer.placeAfter(valueEnd, ')', tagRunEnd(source, attribute.end.offset))
   ) {

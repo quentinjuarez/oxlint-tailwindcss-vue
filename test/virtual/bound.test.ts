@@ -165,6 +165,60 @@ describe('virtualize: bound values', () => {
     expect(rewritten(taken, result)).toEqual(['class="p-1"']);
   });
 
+  it('wraps bound values of attributes from settings in ___', () => {
+    const source = fixture('sfc/user-attribute-objects.vue');
+    const result = checked(source, {
+      attributes: ['ui', 'active-class'],
+      attributePatterns: ['^data-ui$'],
+    });
+    const at = (snippet: string): string =>
+      virtualOf(source, result.code, snippet).trimStart();
+    expect(result.skipped).toEqual([]);
+    expect(result.rewrites).toHaveLength(14);
+    expect(at(`:ui="{ root: 'unknown-a' }"`)).toBe(
+      `;___({ root: 'unknown-a' })`,
+    );
+    expect(at(`:ui="{ 'root': 'unknown-b' }"`)).toBe(
+      `;___({ 'root': 'unknown-b' })`,
+    );
+    expect(at(`:ui="{ 'root': ok ? 'unknown-c' : '' }"`)).toBe(
+      `;___({ 'root': ok ? 'unknown-c' : '' })`,
+    );
+    expect(at(`:ui="{ body: { base: 'unknown-d' } }"`)).toBe(
+      `;___({ body: { base: 'unknown-d' } })`,
+    );
+    expect(at(`:ui="'unknown-e'"`)).toBe(`;___('unknown-e')`);
+    expect(at(`:ui="['unknown-f']"`)).toBe(`;___(['unknown-f'])`);
+    expect(at(`:ui="ok ? 'unknown-g' : ''"`)).toBe(
+      `;___(ok ? 'unknown-g' : '')`,
+    );
+    expect(at(`v-bind:ui="{ root: 'p-3' }"`)).toBe(`;___({ root: 'p-3' })`);
+    expect(at(`:active-class="{ root: 'p-5' }"`)).toBe(`;___({ root: 'p-5' })`);
+    expect(at(`:data-ui="{ root: 'p-7' }"`)).toBe(`;___({ root: 'p-7' })`);
+  });
+
+  it('keeps __ for class bindings, Vue class props and static values', () => {
+    const source = fixture('sfc/user-attribute-objects.vue');
+    const result = checked(source, {
+      attributes: ['ui', 'active-class', 'class'],
+      attributePatterns: ['^data-ui$'],
+    });
+    const at = (snippet: string): string =>
+      virtualOf(source, result.code, snippet).trimStart();
+    expect(at(' ui="p-1" ')).toBe(';__(`p-1`)');
+    expect(at(`:class="{ 'p-2': ok }"`)).toBe(`;__({ 'p-2': ok })`);
+    expect(at(`:active-class="{ 'p-4': ok }"`)).toBe(`;__({ 'p-4': ok })`);
+    expect(at(' data-ui="p-6" ')).toBe(';__(`p-6`)');
+  });
+
+  it('needs five free slots before a bound value of an attribute from settings', () => {
+    expect(virtualBody('<p :x="a">', { attributes: ['x'] })).toBe('  ;___(a) ');
+    const source = '<template><p\n:x="a"></p></template>';
+    expect(checked(source, { attributes: ['x'] }).skipped).toEqual([
+      { code: 'no-room', attribute: ':x', span: spanOf(source, ':x="a"') },
+    ]);
+  });
+
   it('checks components, svg, slots and native templates', () => {
     const source = fixture('sfc/elements.vue');
     const result = checked(source, { attributes: ['ui', 'contentClass'] });

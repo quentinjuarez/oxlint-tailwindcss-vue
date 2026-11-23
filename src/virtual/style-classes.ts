@@ -8,6 +8,8 @@ const CLASS = new RegExp(
 const KEYFRAME_STEPS =
   /^(from|to|\d+(\.\d+)?%)(\s*,\s*(from|to|\d+(\.\d+)?%))*$/;
 const UTILITY_NAME = /^\S+/;
+const SCOPE = /^@scope(?![\w-])/;
+const ESCAPE_OR_ATTRIBUTE_SELECTOR = /(\\[\s\S])|\[(?:\\[\s\S]|[^\\\]])*\]/g;
 
 interface Frame {
   selectors: string[] | null;
@@ -25,8 +27,11 @@ export function collectStyleClasses(
   const stack: Frame[] = [];
   const inherited = (): string[] =>
     stack.findLast((frame) => frame.selectors)?.selectors ?? [];
-  const open = (selectors: string[] | null): void => {
-    for (const selector of selectors ?? []) {
+  const open = (
+    selectors: string[] | null,
+    defined: readonly string[] = selectors ?? [],
+  ): void => {
+    for (const selector of defined) {
       addClasses(module ? globalParts(selector) : selector, names);
     }
     stack.push({ selectors });
@@ -99,13 +104,15 @@ function openBlock(
   header: string,
   names: Set<string>,
   inherited: () => string[],
-  open: (selectors: string[] | null) => void,
+  open: (selectors: string[] | null, defined?: readonly string[]) => void,
 ): void {
   if (header.startsWith('@utility')) {
     const name = UTILITY_NAME.exec(header.slice('@utility'.length).trim())?.[0];
     if (name && !name.includes('#{') && !name.includes('@{'))
       names.add(name.endsWith('*') ? name.slice(0, -1) : name);
     open(null);
+  } else if (SCOPE.test(header)) {
+    open(null, [header.slice('@scope'.length)]);
   } else if (header.startsWith('@at-root')) {
     const rest = header
       .slice('@at-root'.length)
@@ -174,7 +181,11 @@ function globalParts(selector: string): string {
 }
 
 function addClasses(selector: string, names: Set<string>): void {
-  for (const match of selector.replace(/\[[^\]]*\]/g, '').matchAll(CLASS)) {
+  const withoutAttributes = selector.replace(
+    ESCAPE_OR_ATTRIBUTE_SELECTOR,
+    '$1',
+  );
+  for (const match of withoutAttributes.matchAll(CLASS)) {
     const raw = match[1] as string;
     if (match[2]) continue;
     const name = unescapeIdent(raw);

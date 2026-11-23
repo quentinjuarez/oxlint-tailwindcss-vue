@@ -4,6 +4,7 @@ import { dirname, isAbsolute, resolve } from 'node:path';
 
 import { ToolError } from '../errors.js';
 import type { PluginEntry, PrintedConfig } from '../oxlint/commands.js';
+import { CLASS_CALLEE, OBJECT_VALUES_CALLEE } from '../virtual/call.js';
 
 export interface TailwindSettings {
   attributes: string[];
@@ -16,7 +17,6 @@ export interface DeriveInput {
   cwd: string;
 }
 
-const PRIVATE_CALLEE = '__';
 const TAILWIND_PLUGIN = /(^|[\\/])oxlint-tailwindcss([\\/]|$)/;
 
 type Json = Record<string, unknown>;
@@ -145,8 +145,11 @@ export function deriveConfig(input: DeriveInput): Record<string, unknown> {
   if (settings['entryPoint'] !== undefined) {
     settings['entryPoint'] = mapEntryPoint(settings['entryPoint']);
   }
-  const callees = strings(settings['callees']);
-  settings['callees'] = [...callees, PRIVATE_CALLEE];
+  settings['callees'] = [...strings(settings['callees']), CLASS_CALLEE];
+  settings['calleeExtractors'] = {
+    ...asRecord(settings['calleeExtractors']),
+    [OBJECT_VALUES_CALLEE]: 'cva',
+  };
 
   const onlyTailwind = (rules: Json = {}): Json => {
     const kept: Json = {};

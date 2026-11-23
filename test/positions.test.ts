@@ -61,6 +61,25 @@ describe('createPositionMapper', () => {
     expect(map(3)).toMatchObject({ line: 2, column: 1, offset: 3 });
   });
 
+  it('does not count a byte order mark in the columns of line 1', () => {
+    const original = '\uFEFF<p class="x">\n<p class="y">';
+    const { start, map } = mapperFor(original, '"x"');
+    expect(map(start)).toEqual({
+      line: 1,
+      column: 10,
+      byteColumn: 13,
+      offset: start,
+      byteOffset: start + 2,
+    });
+    expect(map(0)).toMatchObject({ line: 1, column: 1, offset: 0 });
+    const second = mapperFor(original, '"y"');
+    expect(second.map(second.start)).toMatchObject({
+      line: 2,
+      column: 10,
+      byteColumn: 10,
+    });
+  });
+
   it('maps an offset past the end to the last position', () => {
     const original = 'é\nab';
     const virtual = ' \nab';

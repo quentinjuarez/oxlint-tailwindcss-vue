@@ -31,7 +31,10 @@ import {
   type MappingContext,
   type VirtualSource,
 } from '../src/map-diagnostics.js';
+import { formatReport } from '../src/output/format.js';
+import { lintVirtualFiles } from '../src/oxlint/commands.js';
 import type { OxlintDiagnostic } from '../src/oxlint/report.js';
+import { resolveOxlint } from '../src/oxlint/resolve.js';
 import {
   createTempRoot,
   pruneStaleTempRoots,
@@ -184,6 +187,33 @@ function located(result: LintResult, file: string) {
       line: start.line,
       column: start.column,
     }));
+}
+
+function fixtureText(path: string): string {
+  return readFileSync(join(fixtures, path), 'utf8');
+}
+
+function literalAt(text: string, line: number, column: number) {
+  return /^'[^']*'/.exec(
+    text.split('\n')[line - 1]?.slice(column - 1) ?? '',
+  )?.[0];
+}
+
+async function literalFindings(cwd: string, vue: string) {
+  const { findings } = await lint({ cwd });
+  return findings.map(({ start, message }) => ({
+    line: start.line,
+    message,
+    literal: literalAt(vue, start.line, start.column),
+  }));
+}
+
+function unknownClasses(...lines: [number, string][]) {
+  return lines.map(([line, name]) => ({
+    line,
+    message: `"${name}" is not a valid Tailwind class.`,
+    literal: `'${name}'`,
+  }));
 }
 
 function thrown(run: () => unknown): unknown {
@@ -692,6 +722,28 @@ describe('classes from a component style block', () => {
   );
 
   it(
+    'drops the classes of @scope selector lists and of escaped brackets',
+    async () => {
+      const dir = project({
+        '.oxlintrc.json': JSON.stringify({
+          jsPlugins: ['oxlint-tailwindcss'],
+          settings: { tailwindcss: { entryPoint: 'src/style.css' } },
+          rules: { 'tailwindcss/no-unknown-classes': 'error' },
+        }),
+        'src/style.css': '@import "tailwindcss";\n',
+        'src/Escaped.vue': fixtureText('sfc/styles-escaped-brackets.vue'),
+        'src/Scope.vue': fixtureText('sfc/styles-scope.vue'),
+      });
+      const result = await lint({ cwd: dir });
+      expect(messageOf(result)).toEqual([
+        '"unknown-escape" is not a valid Tailwind class.',
+        '"unknown-scope" is not a valid Tailwind class.',
+      ]);
+    },
+    TIMEOUT,
+  );
+
+  it(
     'keeps the plugin message format the filter relies on',
     async () => {
       const dir = project({
@@ -838,6 +890,145 @@ describe('theme file paths in messages', () => {
       expect(result.findings.map(({ message }) => message)).toEqual([
         `"w-[13px]" uses an arbitrary value. Closest in your theme: w-3 (12px) or w-3.5 (14px). If none fits, add a token to ${join('src', 'style.css')}.`,
       ]);
+    },
+    TIMEOUT,
+  );
+});
+
+describe('known limitation: line wrapping reads the virtual indentation', () => {
+  it(
+    'reports multi-line values wrapped as the rule asks, never a single-line value',
+    async () => {
+      const dir = join(projects, 'line-wrapping');
+      const result = await lint({ cwd: dir });
+      expect(located(result, join(dir, 'src', 'A.vue'))).toEqual(
+        [
+          [3, 11],
+          [8, 13],
+          [12, 12],
+        ].map(([line, column]) => ({
+          rule: 'tailwindcss/enforce-consistent-line-wrapping',
+          severity: 'warning',
+          line,
+          column,
+        })),
+      );
+    },
+    TIMEOUT,
+  );
+});
+
+describe('a byte order mark', () => {
+  it(
+    'is not a column of line 1, except in json byte columns',
+    async () => {
+      const dir = project({
+        '.oxlintrc.json': JSON.stringify({
+          jsPlugins: ['oxlint-tailwindcss'],
+          settings: { tailwindcss: { entryPoint: 'src/style.css' } },
+          rules: { 'tailwindcss/no-unknown-classes': 'error' },
+        }),
+        'src/style.css': '@import "tailwindcss";\n',
+        'src/A.vue': fixtureText('crlf/bom-line-one.vue'),
+      });
+      const result = await lint({ cwd: dir });
+      const options = { cwd: dir, quiet: false, debug: true, color: false };
+      expect(formatReport(result, 'default', options)).toBe(
+        [
+          'src/A.vue:1:20 error tailwindcss/no-unknown-classes "unknown-x" is not a valid Tailwind class.',
+          'src/A.vue:1:42 notice unquoted-key on',
+          '',
+          '1 error, 0 warnings in 1 file',
+          '',
+        ].join('\n'),
+      );
+      expect(formatReport(result, 'github', options)).toContain(
+        'file=src/A.vue,line=1,col=20,',
+      );
+      const json = JSON.parse(formatReport(result, 'json', options)) as {
+        diagnostics: OxlintDiagnostic[];
+      };
+      expect(json.diagnostics[0]?.labels[0]?.span).toEqual({
+        offset: 22,
+        length: 11,
+        line: 1,
+        column: 23,
+      });
+    },
+    TIMEOUT,
+  );
+});
+
+describe('object values of attributes from settings', () => {
+  const dir = join(projects, 'ui-objects');
+  const config = readFileSync(join(dir, '.oxlintrc.json'), 'utf8');
+  const style = '@import "tailwindcss";\n';
+
+  async function nativeLiteralFindings(vue: string) {
+    const tsx = vue
+      .replace('<template>', 'export const A = () => (<>')
+      .replace('</template>', '</>);')
+      .replaceAll(/:ui="([^"]*)"/g, 'ui={$1}');
+    const native = project({
+      '.oxlintrc.json': config,
+      'src/style.css': style,
+      'src/A.tsx': tsx,
+    });
+    const { diagnostics } = await lintVirtualFiles(resolveOxlint([native]), {
+      configPath: join(native, '.oxlintrc.json'),
+      cwd: native,
+      files: [join(native, 'src', 'A.tsx')],
+    });
+    return diagnostics.map(({ message, labels: [label] }) => ({
+      line: label?.span.line,
+      message,
+      literal: literalAt(tsx, label?.span.line ?? 0, label?.span.column ?? 0),
+    }));
+  }
+
+  it(
+    'reports the values and never the keys, like oxlint on a JSX attribute',
+    async () => {
+      const vue = readFileSync(join(dir, 'src', 'A.vue'), 'utf8');
+      const reported = await literalFindings(dir, vue);
+      expect(reported).toEqual(
+        unknownClasses(
+          [2, 'unknown-a'],
+          [3, 'unknown-b'],
+          [4, 'unknown-c'],
+          [6, 'unknown-e'],
+          [7, 'unknown-f'],
+          [8, 'unknown-g'],
+          [9, 'unknown-h'],
+        ),
+      );
+      expect(await nativeLiteralFindings(vue)).toEqual(reported);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'known limitation: reads keys named like a cva config as cva does',
+    async () => {
+      const vue = [
+        '<template>',
+        `  <UCard :ui="{ defaultVariants: 'unknown-a' }" />`,
+        `  <UCard :ui="{ variants: { size: { sm: 'unknown-b' } } }" />`,
+        `  <UCard :ui="{ compoundVariants: [{ class: 'unknown-c' }] }" />`,
+        '</template>',
+        '',
+      ].join('\n');
+      const cwd = project({
+        '.oxlintrc.json': config,
+        'src/style.css': style,
+        'src/A.vue': vue,
+      });
+      expect(await literalFindings(cwd, vue)).toEqual(
+        unknownClasses([3, 'unknown-b'], [4, 'unknown-c']),
+      );
+      expect(await nativeLiteralFindings(vue)).toEqual(
+        unknownClasses([2, 'unknown-a']),
+      );
     },
     TIMEOUT,
   );

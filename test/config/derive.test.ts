@@ -90,14 +90,34 @@ describe('deriveConfig', () => {
     ]);
   });
 
-  it('adds the private callee and keeps the user callees', async () => {
-    expect((await derive('basic')).settings.tailwindcss.callees).toEqual([
-      '__',
-    ]);
+  it('adds the private callees and keeps the user callees', async () => {
+    const basic = (await derive('basic')).settings.tailwindcss;
+    expect(basic.callees).toEqual(['__']);
+    expect(basic.calleeExtractors).toEqual({ ___: 'cva' });
     expect((await derive('alias')).settings.tailwindcss.callees).toEqual([
       'cva',
       '__',
     ]);
+  });
+
+  it('keeps the user callee extractors next to ___', () => {
+    const dir = join(projects, 'basic');
+    const extractorsOf = (calleeExtractors: unknown) =>
+      (
+        deriveConfig({
+          printed: {
+            jsPlugins: ['oxlint-tailwindcss'],
+            settings: { tailwindcss: { calleeExtractors } },
+          },
+          configFile: join(dir, '.oxlintrc.json'),
+          cwd: dir,
+        }) as Record<string, any>
+      )['settings'].tailwindcss.calleeExtractors;
+    expect(extractorsOf({ styles: 'tv', ___: 'flat' })).toEqual({
+      styles: 'tv',
+      ___: 'cva',
+    });
+    expect(extractorsOf(['tv'])).toEqual({ ___: 'cva' });
   });
 
   it('writes only the user overrides, with no allowlist override', async () => {

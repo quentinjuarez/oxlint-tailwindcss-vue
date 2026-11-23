@@ -1,0 +1,7 @@
+{
+  "jsPlugins": ["oxlint-tailwindcss"],
+  "settings": {
+    "tailwindcss": { "entryPoint": "src/style.css", "attributes": ["ui"] }
+  },
+  "rules": { "tailwindcss/no-unknown-classes": "error" }
+}

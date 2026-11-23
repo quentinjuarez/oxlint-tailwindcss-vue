@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { collectStyleClasses } from '../../src/virtual/style-classes.js';
 import { virtualize } from '../../src/virtual/virtualize.js';
+import { checked } from '../helpers/virtual.js';
 
 const css = (content: string): string[] =>
   collectStyleClasses(content, undefined, false);
@@ -155,6 +156,32 @@ describe('collectStyleClasses', () => {
     expect(css('.a{background:url( a.png )}.b{}')).toEqual(['a', 'b']);
   });
 
+  it('reads the selector lists of @scope, with or without to', () => {
+    expect(
+      css(
+        '@scope (.card) to (.content) { :scope { } .title { } } @scope (.panel, .sheet:not(.x)) { .body { } }',
+      ),
+    ).toEqual(['body', 'card', 'content', 'panel', 'sheet', 'title', 'x']);
+    expect(css('@scope { :scope { } .inner { } } @scoped (.no) { }')).toEqual([
+      'inner',
+    ]);
+    expect(
+      collectStyleClasses(
+        '@scope (.local) to (:global(.limit)) { :global(.inside) { } }',
+        undefined,
+        true,
+      ),
+    ).toEqual(['inside', 'limit']);
+  });
+
+  it('strips only unescaped attribute selectors', () => {
+    expect(
+      css(
+        String.raw`.grid-areas-\[main\] { } .a[data-x="]"] { } .b\[x\]c[d] { } .e\\[f] { }`,
+      ),
+    ).toEqual(['a', 'b[x]c', 'e\\', 'grid-areas-[main]']);
+  });
+
   it('survives unterminated input', () => {
     expect(css('.a { content: "open')).toEqual(['a']);
     expect(css('.a /* open')).toEqual([]);
@@ -193,6 +220,20 @@ describe('virtualize styleClasses', () => {
       'tab-',
       'tab-4',
     ]);
+  });
+
+  it('reads @scope roots and limits and escaped brackets in a component', () => {
+    expect(checked(fixture('styles-scope.vue')).styleClasses).toEqual([
+      'body',
+      'card',
+      'content',
+      'panel',
+      'sheet',
+      'title',
+    ]);
+    expect(
+      checked(fixture('styles-escaped-brackets.vue')).styleClasses,
+    ).toEqual(['a', 'grid-areas-[main]']);
   });
 
   it('still reads styles when the template is skipped', () => {

@@ -76,13 +76,17 @@ The virtual file has the same length as the `.vue` file in UTF-16 code units
 and the same line breaks at the same indices. Every character is replaced by
 an ASCII space (two spaces for an astral character) except `\n` and `\r`, then
 each checked class attribute is written back at its original offset inside a
-call to a private callee, `__`, added to `settings.tailwindcss.callees`:
+call to a private callee. `__`, added to `settings.tailwindcss.callees`, wraps
+every static value and the bound values of `class` and of Vue's class props.
+`___` wraps the bound value of an attribute checked only because of the
+`attributes` or `attributePatterns` settings:
 
-| In the template             | In the virtual file         |
-| :-------------------------- | :-------------------------- |
-| `class="flex p-2"`          | ``  ;__(`flex p-2`)``       |
-| `:class="{ 'p-2': x }"`     | `    ;__({ 'p-2': x })`     |
-| `v-bind:class="[a, 'p-2']"` | `          ;__([a, 'p-2'])` |
+| In the template                                | In the virtual file         |
+| :--------------------------------------------- | :-------------------------- |
+| `class="flex p-2"`                             | ``  ;__(`flex p-2`)``       |
+| `:class="{ 'p-2': x }"`                        | `    ;__({ 'p-2': x })`     |
+| `v-bind:class="[a, 'p-2']"`                    | `          ;__([a, 'p-2'])` |
+| `:ui="{ root: 'p-2' }"`, with `ui` in settings | `;___({ root: 'p-2' })`     |
 
 Rules:
 
@@ -114,7 +118,16 @@ Rules:
 6. Checked attributes: `class`, `:class`, `v-bind:class`, the class props of
    Vue's built-in components (`Transition`, `TransitionGroup`, `RouterLink`),
    and every attribute listed in the user's oxlint-tailwindcss `attributes` or
-   `attributePatterns` settings, in kebab or camel case.
+   `attributePatterns` settings, in kebab or camel case. A bound value of an
+   attribute from these settings is read like the plugin reads a JSX
+   attribute: in an object, the values and never the keys, which name slots
+   (`:ui="{ root: 'p-2' }"`). `__` would read quoted keys as classes, so the
+   CLI registers `___` as `calleeExtractors: { ___: 'cva' }`: the cva
+   extractor reads an object argument's values through the plugin's general
+   extractor, as `extractObjectValues` does for a JSX attribute. As in JSX,
+   the values of a nested object are not read, while its quoted keys are, as
+   in a `:class` object. `;___(` needs five free slots, under the same
+   placement rules.
 7. Disable comments: an HTML comment whose text starts with `oxlint-disable`,
    `oxlint-enable`, `eslint-disable` or `eslint-enable` becomes a JS block
    comment of the same length at the same offsets (`<!--` becomes `/*` and two
@@ -136,8 +149,10 @@ can interfere:
   top level with the user's alias. The plugin is looked up in the printed
   top-level `jsPlugins` and in every `overrides[].jsPlugins`; declarations with
   the same alias count as one, different aliases are a tool failure.
-- `settings.tailwindcss`: the user's block, with `entryPoint` made absolute and
-  the private callee added.
+- `settings.tailwindcss`: the user's block, with `entryPoint` made absolute,
+  `__` added to `callees` and `___: 'cva'` added to the user's
+  `calleeExtractors` (oxlint-tailwindcss also registers every extractor name
+  as a callee).
 - `rules`: only the `tailwindcss/*` rules (or the user's alias), with option
   paths made absolute.
 - `overrides`: the user's overrides reduced to the Tailwind rules. No per-file
@@ -180,28 +195,34 @@ node <oxlint bin> -c <tmp>/<group>/.oxlintrc.json --format json -A all
 
 oxlint reports UTF-8 byte offsets and byte columns. The CLI converts the byte
 offset to a UTF-16 index through the virtual text, which equals the index in
-the `.vue` file, then computes the line and column on the original text. Paths
-come back relative to the child cwd, absolute, or as `file://` URLs (JetBrains
-terminals); all three are handled. A message that contains a virtual path is
-rewritten to the original path. A theme file path the plugin wrote relative to
-the child cwd is rewritten relative to the user's cwd.
+the `.vue` file, then computes the line and column on the original text. On
+line 1, a byte order mark is not counted in the UTF-16 column: editors hide
+it. The byte offset and the byte column keep counting its three bytes, as
+oxlint does on a script. Paths come back relative to the child cwd, absolute,
+or as `file://` URLs (JetBrains terminals); all three are handled. A message
+that contains a virtual path is rewritten to the original path. A theme file
+path the plugin wrote relative to the child cwd is rewritten relative to the
+user's cwd.
 
 ## Classes defined in `<style>`
 
 A tolerant tokenizer reads the `<style>` blocks: it skips comments (and `//` in
 SCSS, Less and Stylus), strings and `url()`, splits selectors on top-level
 commas, resolves `&` against the parent selector, decodes CSS escapes, keeps
-`@utility` names, and counts only `:global()` names in CSS modules. The names
-are not passed to the plugin: after the run, a `no-unknown-classes` finding
-whose message starts with `"<class>"` for a class of the file's `<style>` is
-dropped, before findings are counted. An integration test pins the plugin's
-message format.
+`@utility` names, and counts only `:global()` names in CSS modules. The two
+selector lists of `@scope (<roots>) to (<limits>)` define classes too, and an
+attribute selector is stripped only when its bracket is not escaped, so
+`.grid-areas-\[main\]` defines `grid-areas-[main]`. The names are not passed
+to the plugin: after the run, a `no-unknown-classes` finding whose message
+starts with `"<class>"` for a class of the file's `<style>` is dropped, before
+findings are counted. An integration test pins the plugin's message format.
 
 ## Output
 
 - `default`: one line per finding, `path:line:column severity rule message`,
   then a summary. Colors through `util.styleText`, which honors `NO_COLOR`.
-  Columns count UTF-16 code units, like editors and clickable terminal links.
+  Columns count UTF-16 code units, like editors and clickable terminal links
+  (a byte order mark is not counted).
 - `json`: oxlint's JSON shape and units, with original paths: `offset`,
   `length` and `column` count UTF-8 bytes of the `.vue` file, exactly as oxlint
   reports script blocks, so both outputs can be merged.
@@ -318,6 +339,29 @@ oxlint-tailwindcss 1.17.2, tailwindcss 4.3.5, Vue 3.5.44, @vue/compiler-sfc
 - `--fix` comes in 0.2, after 0.1 has proven the positions on real projects.
 - Nuxt: `.vue` files work the same way; a Nuxt fixture confirms it before the
   `nuxt` keyword is added.
+
+## Known limitations of 0.1
+
+- `enforce-consistent-line-wrapping` with `"wrapLines": "all"` reports some
+  multi-line class values that are wrapped as it asks. The rule reads the base
+  indent from the leading whitespace of the line where the value starts, and
+  in the virtual file the blanked tag and attribute name count as indentation
+  up to the callee. Writing `;` on the first character of an attribute that
+  starts its own line would keep the indent, but an attribute on the tag line
+  cannot be fixed that way without bending the contract. A value on one line
+  within the print width is never reported, and `"wrapLines": "overWidth"`
+  (for example in an override for `**/*.vue`) avoids the false reports. An
+  integration test named as a known limitation pins the current reports, so a
+  fix shows up as a test change.
+- `--debug` lists unquoted keys only for an object at the top of `:class` or
+  directly inside an array there. Deeper objects (ternary branches, `&&` and
+  `||` operands, nested arrays, calls such as `cn({ active: x })`) are not
+  listed, and their unquoted keys are not checked either.
+- In an object of an attribute from settings, keys named `variants`,
+  `compoundVariants` and `defaultVariants` get the cva reading instead of the
+  JSX one: the value of `defaultVariants` is not read, and the classes a
+  `cva()` config holds under `variants` and `compoundVariants` are. An
+  integration test pins it.
 
 ## Open question
 

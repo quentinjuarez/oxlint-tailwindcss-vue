@@ -114,6 +114,17 @@ describe('virtualize: static values', () => {
     expect(result.rewrites).toHaveLength(2);
   });
 
+  it('rewrites the attributes of a line that starts with a byte order mark', () => {
+    const source = fixture('crlf/bom-line-one.vue');
+    const result = checked(source);
+    expect(source.charCodeAt(0)).toBe(0xfeff);
+    expect(rewritten(source, result)).toEqual([
+      'class="unknown-x"',
+      ':class="{ on: x }"',
+    ]);
+    expect(virtualOf(source, result.code, '"unknown-x"')).toBe('`unknown-x`');
+  });
+
   it('copies LF line breaks inside a multi-line value', () => {
     const source = fixture('sfc/multiline-lf.vue');
     const result = checked(source);

@@ -45,17 +45,27 @@ function compilePatterns(patterns: readonly string[]): RegExp[] {
   return compiled;
 }
 
-export type AttributeMatcher = (tag: string, name: string) => boolean;
+export type AttributeKind = 'class' | 'setting';
+
+export type AttributeMatcher = (
+  tag: string,
+  name: string,
+) => AttributeKind | undefined;
 
 export function createAttributeMatcher(
   options: VirtualizeOptions,
 ): AttributeMatcher {
   const userNames = new Set(withForms(options.attributes ?? []));
   const patterns = compilePatterns(options.attributePatterns ?? []);
-  return (tag, name) =>
-    name === 'class' ||
-    (TRANSITION_TAGS.has(tag) && TRANSITION_PROPS.has(name)) ||
-    (ROUTER_LINK_TAGS.has(tag) && ROUTER_LINK_PROPS.has(name)) ||
-    userNames.has(name) ||
-    patterns.some((pattern) => pattern.test(name));
+  return (tag, name) => {
+    if (
+      name === 'class' ||
+      (TRANSITION_TAGS.has(tag) && TRANSITION_PROPS.has(name)) ||
+      (ROUTER_LINK_TAGS.has(tag) && ROUTER_LINK_PROPS.has(name))
+    )
+      return 'class';
+    if (userNames.has(name) || patterns.some((pattern) => pattern.test(name)))
+      return 'setting';
+    return undefined;
+  };
 }

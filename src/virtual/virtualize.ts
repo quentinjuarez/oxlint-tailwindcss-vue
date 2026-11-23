@@ -96,7 +96,7 @@ export function virtualize(
   }
 
   const buffer = new VirtualBuffer(source);
-  const isChecked = createAttributeMatcher(options);
+  const matchAttribute = createAttributeMatcher(options);
   const regions = new Map<number, Rewrite>();
   const record = (
     kind: Rewrite['kind'],
@@ -124,21 +124,21 @@ export function virtualize(
     const isWrapper = node.tagType === TEMPLATE_WRAPPER;
     for (const prop of node.props) {
       if (prop.type === ATTRIBUTE) {
-        const value = checkedValue(prop, node.tag, isChecked);
+        const value = checkedValue(prop, node.tag, matchAttribute);
         if (!value) continue;
         const outcome = isWrapper
           ? 'template-wrapper'
           : rewriteStatic(buffer, source, prop, value);
         record('static', prop.name, prop.loc, outcome);
       } else {
-        const exp = checkedExpression(prop, node.tag, isChecked);
-        if (!exp) continue;
+        const bound = checkedExpression(prop, node.tag, matchAttribute);
+        if (!bound) continue;
         const outcome = isWrapper
           ? 'template-wrapper'
-          : rewriteBound(buffer, source, prop, exp);
+          : rewriteBound(buffer, source, prop, bound);
         // compiler-core sets rawName on every directive it parses.
         if (record('bound', prop.rawName as string, prop.loc, outcome))
-          noteUnquotedKeys(prop, exp, result.notices);
+          noteUnquotedKeys(prop, bound.exp, result.notices);
       }
     }
   });

@@ -2,7 +2,7 @@ import type { AttributeNode, TextNode } from '@vue/compiler-core';
 
 import type { AttributeMatcher } from './attributes.js';
 import type { VirtualBuffer } from './buffer.js';
-import { writeCall } from './call.js';
+import { CLASS_CALLEE, writeCall } from './call.js';
 import type { SkipCode } from './types.js';
 
 // Outside v-pre, compiler-core reads these names as directives; inside, they
@@ -20,11 +20,11 @@ type LiteralForm = 'template-literal' | 'original-quotes';
 export function checkedValue(
   prop: AttributeNode,
   tag: string,
-  isChecked: AttributeMatcher,
+  matchAttribute: AttributeMatcher,
 ): TextNode | undefined {
   return prop.value &&
     !DIRECTIVE_SHAPED.test(prop.name) &&
-    isChecked(tag, prop.name)
+    matchAttribute(tag, prop.name) !== undefined
     ? prop.value
     : undefined;
 }
@@ -50,15 +50,23 @@ export function rewriteStatic(
   const open = quoted ? start : start - 1;
   const close = quoted ? end - 1 : end;
   if (!buffer.isFree(open) || !buffer.isFree(close)) return 'no-room';
-  return writeCall(buffer, source, prop.loc, open, close + 1, () => {
-    if (form === 'original-quotes') {
-      buffer.copy(open, close + 1);
-    } else {
-      buffer.write(open, '`');
-      buffer.copy(open + 1, close);
-      buffer.write(close, '`');
-    }
-  });
+  return writeCall(
+    buffer,
+    source,
+    CLASS_CALLEE,
+    prop.loc,
+    open,
+    close + 1,
+    () => {
+      if (form === 'original-quotes') {
+        buffer.copy(open, close + 1);
+      } else {
+        buffer.write(open, '`');
+        buffer.copy(open + 1, close);
+        buffer.write(close, '`');
+      }
+    },
+  );
 }
 
 // compiler-core condenses a class value on HTML whitespace and trims it; any
