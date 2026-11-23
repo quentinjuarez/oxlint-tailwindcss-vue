@@ -25,9 +25,7 @@
     "type": "git",
     "url": "git+https://github.com/quentinjuarez/oxlint-tailwindcss-vue.git"
   },
-  "bin": {
-    "oxlint-tailwindcss-vue": "dist/cli.js"
-  },
+  "bin": "dist/cli.js",
   "files": [
     "dist"
   ],

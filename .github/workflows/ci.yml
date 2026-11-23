@@ -107,9 +107,16 @@ jobs:
 
       # npm first: publishing is the irreversible half, so a failure here leaves
       # no commit and no tag behind. Trusted publishing (OIDC) adds provenance.
+      # Yarn writes `bin` back as a string on every install and npm warns when it
+      # converts it, so npm publishes the manifest `npm pkg fix` produces, and
+      # Yarn's form comes back for the release commit.
       - name: Publish to npm
         if: steps.version.outputs.version != ''
-        run: npm publish --provenance --access public
+        run: |
+          cp package.json "$RUNNER_TEMP/package.json"
+          npm pkg fix
+          npm publish --provenance --access public
+          cp "$RUNNER_TEMP/package.json" package.json
 
       - name: Commit and tag the release
         if: steps.version.outputs.version != ''
