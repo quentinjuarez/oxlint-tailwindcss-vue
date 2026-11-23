@@ -226,10 +226,10 @@ attribute selector is stripped only when its bracket is not escaped, so
 `.grid-areas-\[main\]` defines `grid-areas-[main]`. The names are not passed
 to the plugin: after the run, a `no-unknown-classes` finding whose message
 starts with `"<class>"` for a class of the file's `<style>` is dropped, before
-findings are counted. A wildcard `@utility tab-*` keeps its `*`, which marks
-a prefix: it drops the findings whose quoted class starts with `tab-`, while
-a class literally named `.tab-` stays an exact name. An integration test pins
-the plugin's message format.
+findings are counted. A wildcard `@utility fancy-*` keeps its `*`, which
+marks a prefix: it drops the findings whose quoted class starts with
+`fancy-`, while a class literally named `.fancy-` stays an exact name. An
+integration test pins the plugin's message format.
 
 ## Output
 

@@ -150,9 +150,10 @@ Read with the tolerant tokenizer, never a regex over the raw text: skip
 comments (and `//` in SCSS, Less, Stylus), strings and `url()`; split selectors
 on top-level commas; resolve `&` against the parent selector; decode CSS
 escapes (`.md\:flex` is `md:flex`); keep `@utility` names (a wildcard
-`@utility tab-*` keeps its `*`, which the post-run filter reads as the prefix
-`tab-`; a class literally named `.tab-` stays exact); in CSS modules count
-only `:global()` names. Drop names built with interpolation (`#{}`, `@{}`).
+`@utility fancy-*` keeps its `*`, which the post-run filter reads as the
+prefix `fancy-`; a class literally named `.fancy-` stays exact); in CSS
+modules count only `:global()` names. Drop names built with interpolation
+(`#{}`, `@{}`).
 `@scope (<roots>) to (<limits>)`, with or without `to`, defines the classes of
 both selector lists, next to the classes inside the block; `:scope` names no
 class. Strip only unescaped attribute selectors: `.grid-areas-\[main\]`

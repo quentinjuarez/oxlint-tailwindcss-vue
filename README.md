@@ -397,8 +397,8 @@ before instead.
 oxlint-tailwindcss-vue drops the `no-unknown-classes` findings on the classes
 a component defines in its own `<style>` blocks after the run, instead of
 adding them to an allowlist, so your overrides of that rule still apply. A
-wildcard `@utility tab-*` covers every class that starts with `tab-`. In CSS
-modules, only `:global()` names count.
+wildcard `@utility fancy-*` covers every class that starts with `fancy-`. In
+CSS modules, only `:global()` names count.
 
 ### Does oxlint-tailwindcss-vue work with Nuxt?
 
