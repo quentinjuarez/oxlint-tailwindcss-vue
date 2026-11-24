@@ -1,6 +1,6 @@
 {
   "name": "oxlint-tailwindcss-vue",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Lint Tailwind CSS classes in Vue templates with oxlint and oxlint-tailwindcss. Oxlint alone only checks the script blocks of .vue files.",
   "keywords": [
     "cli",
