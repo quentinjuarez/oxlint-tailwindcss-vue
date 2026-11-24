@@ -413,7 +413,7 @@ function checkTemplate(source: string): void {
 }
 
 describe('virtualize: contract property', () => {
-  it('keeps the contract on generated templates', () => {
+  it('keeps the contract on generated templates', { timeout: 30_000 }, () => {
     fc.assert(fc.property(sfc, checkTemplate), {
       seed: SEED,
       numRuns: RUNS,

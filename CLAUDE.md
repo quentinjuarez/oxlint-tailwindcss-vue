@@ -57,10 +57,11 @@ yarn format          # oxfmt, also sorts package.json
   a patch, `!` or a `BREAKING CHANGE` footer a major, anything else nothing.
   Use `chore`, `docs`, `test`, `ci` or `refactor` for work that must not
   release.
-- CI publishes with npm trusted publishing (OIDC) from the `release` job, the
-  only one with `id-token: write`: it installs, builds and publishes, nothing
-  else. It stays off until the repository variable `RELEASE_ENABLED` is
-  `true`. Quentin publishes the first version by hand.
+- CI releases from the `release` job, the only one with `id-token: write`: it
+  publishes with npm trusted publishing (OIDC) and provenance, then commits
+  `release: vX.Y.Z`, tags it and creates the GitHub release. It runs none of
+  the dev tools, and only while the repository variable `RELEASE_ENABLED` is
+  `true`. Run the workflow by hand only to retry a failed release.
 
 ## Specialized agents (`.claude/agents/`)
 
@@ -70,5 +71,4 @@ yarn format          # oxfmt, also sorts package.json
   or when someone reports a wrong position.
 - `readme-reviewer`: after any change to README.md, the npm description or the
   keywords.
-- `release-reviewer`: before the first publish, and when package.json, the
-  exports or CI change.
+- `release-reviewer`: when package.json, the exports, the bin or CI change.

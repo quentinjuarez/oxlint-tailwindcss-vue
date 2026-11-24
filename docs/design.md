@@ -32,7 +32,7 @@ silently. The usual workaround is to keep ESLint for templates only.
   (oxc#20465). The package is a CLI that runs next to oxlint.
 - No editor integration.
 - No linting of `<script>` blocks: oxlint already does it.
-- No `--fix` (planned for 0.2, see "Fixes").
+- No `--fix` (planned, see "Fixes").
 - No Svelte, Astro, Vue 2 or Pug templates.
 - No merged report with the native oxlint run: users chain
   `oxlint && oxlint-tailwindcss-vue`.
@@ -102,7 +102,7 @@ Rules:
    and a skipped attribute stays blank.
 3. Static values become template literals, so backslashes and line breaks keep
    their raw value; line breaks stay exactly as in the source, `\r` included.
-   (`--fix` in 0.2 will need `\r\n` written as ` \n`, because the plugin
+   (`--fix` will need `\r\n` written as ` \n`, because the plugin
    sizes fix ranges on the LF-normalized raw value; reports do not depend on
    it.) A value with a backtick or `${` keeps its original quotes when
    it fits on one line without a backslash; otherwise it is skipped.
@@ -295,7 +295,7 @@ at the issues URL of `package.json`; the error is kept as its `cause`, and
 - The plugin's own cache in the temp dir is never touched (its folder,
   `oxlint-tailwindcss-<user>`, can share the prefix on Windows).
 
-## Fixes (0.2)
+## Fixes (planned)
 
 Fixes change lengths and line counts, so they cannot be copied back by offset.
 The validated strategy: run `--fix` in a loop until nothing changes, compare
@@ -352,7 +352,7 @@ oxlint-tailwindcss-vue 0.1.0:
 - Disable comments in templates are supported in 0.1 (contract rule 7): a
   linter needs an inline way out.
 - Column units are fixed per format (see "Output").
-- `--fix` comes in 0.2, after 0.1 has proven the positions on real projects.
+- `--fix` comes after 0.1 has proven the positions on real projects.
 - Nuxt: `.vue` files work the same way; a Nuxt fixture confirms it before the
   `nuxt` keyword is added.
 

@@ -1,6 +1,6 @@
 ---
 name: release-reviewer
-description: Use before the first publish of oxlint-tailwindcss-vue to npm, and whenever package.json, the exports, the bin or the CI workflow change. Checks what npm users will actually install and how it gets published. Does not modify files and never publishes.
+description: Use whenever package.json, the exports, the bin or the CI workflow of oxlint-tailwindcss-vue change. Checks what npm users will actually install and how it gets published. Does not modify files and never publishes.
 tools: Read, Grep, Glob, Bash
 ---
 
@@ -19,8 +19,10 @@ You check that oxlint-tailwindcss-vue is ready to be published. You never run
    matrix floor), peer ranges (no lower than the versions CI tests), the
    description (under 150 characters, no angle brackets) and the keywords
    (the `readme` skill list).
-5. The version is not already on npm (`npm view oxlint-tailwindcss-vue
-   versions`), and it matches the release being prepared.
+5. The commit type gives the intended release (`scripts/decide-bump.mjs`):
+   `feat` a minor, `fix` and `perf` a patch, `!` or a `BREAKING CHANGE` footer
+   a major, anything else none. CI bumps the version, so package.json holds
+   the last released one.
 6. CI: actions pinned by commit SHA, `id-token: write` only on the release
    job, releases gated by `RELEASE_ENABLED`, `npm publish` without a token.
 7. The README passed the `readme-reviewer`, and the LICENSE year is current.
