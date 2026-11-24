@@ -92,7 +92,7 @@ says "Classes written in a template are not checked yet." Template support
 waits for oxc language plugins, proposed in
 [oxc#21936](https://github.com/oxc-project/oxc/discussions/21936) with no
 release date. Until then oxlint exits 0 on a template full of unknown classes,
-so the gap is silent. Quotes checked on 2026-11-22.
+so the gap is silent.
 
 ## What oxlint-tailwindcss-vue checks
 
@@ -176,29 +176,6 @@ SaveStatus.vue.ts          ;__(`flex flex-shrink-0 items-center gap-2 p-4`)
 
 oxlint-tailwindcss-vue never writes to your project: the temporary folder is
 removed after the run, even on Ctrl+C.
-
-## Results on a real Vue app
-
-On 2026-11-23, oxlint-tailwindcss-vue 0.1.0 checked paint-emoji, the author's
-Vue 3 and Tailwind CSS 4 monorepo (a private repository), from its root:
-
-| Measure                                               | Result                                                                                       |
-| :---------------------------------------------------- | :------------------------------------------------------------------------------------------- |
-| `.vue` files                                          | 93                                                                                           |
-| Class attributes checked                              | 621: 577 static, 44 bound, none skipped                                                      |
-| Findings                                              | 1 error and 7 warnings in 7 files, no false positive                                         |
-| oxlint with oxlint-tailwindcss on the same repository | 386 files, 0 findings, exit 0                                                                |
-| Wall-clock time of a full run                         | 1.19 to 1.30 s over six runs (1.30 s for the first), against 0.72 to 0.85 s for oxlint alone |
-
-The 8 findings: `break-words`, deprecated in Tailwind CSS v4 (the error);
-`[scrollbar-width:none]` twice, `text-[length:var(--emoji-px)]` and `h-[1lh]`
-with a canonical form; `h-[1lh]` again as an unnecessary arbitrary value; and
-two shorthands, `w-full h-full` to `size-full` and `px-2 py-2` to `p-2`. The
-classes that components define in their own `<style>` blocks, such as `.mat`
-and `.checker`, are not reported.
-
-Versions: oxlint 1.94.0, oxlint-tailwindcss 1.17.2, tailwindcss 4.3.5, Vue
-3.5.44, Node.js 26.13.1. Machine: macOS 27.2 on an Apple M4 with 16 GB of RAM.
 
 ## Options
 
@@ -352,8 +329,7 @@ only those files are checked:
   `"wrapLines": "overWidth"` for `**/*.vue` in an override.
 - Templates in Pug or any `lang` other than HTML, and `<template src>`, are
   skipped.
-- No fixes in 0.1: findings are reported, not fixed. `--fix` is planned for
-  0.2.
+- No fixes: findings are reported, not fixed.
 - No editor diagnostics: findings appear in the terminal and in CI, not in
   your editor.
 - Classes built at runtime, for example returned by a function or read from
@@ -377,8 +353,8 @@ templates, without ESLint or vue-eslint-parser.
 
 ### Does oxlint-tailwindcss-vue change my files?
 
-No. Version 0.1 only reads your project: the virtual files go to a temporary
-folder that is removed after the run, and there is no `--fix` yet.
+No. oxlint-tailwindcss-vue only reads your project: the virtual files go to a
+temporary folder that is removed after the run, and there is no `--fix`.
 
 ### How do I disable a rule on one line of a Vue template?
 
@@ -403,9 +379,9 @@ CSS modules, only `:global()` names count.
 
 ### Does oxlint-tailwindcss-vue work with Nuxt?
 
-Not tested yet: 0.1 has no Nuxt test project, so Nuxt support is not claimed.
-The class props of `NuxtLink` are matched by name, like those of `RouterLink`,
-but no Nuxt project runs in the tests.
+Not tested yet, so Nuxt support is not claimed. The class props of `NuxtLink`
+are matched by name, like those of `RouterLink`, but no Nuxt project runs in
+the tests.
 
 ### Does oxlint-tailwindcss-vue support Svelte, Astro, Vue 2 or Tailwind CSS v3?
 
@@ -429,8 +405,6 @@ tracked in [oxc#21936](https://github.com/oxc-project/oxc/discussions/21936).
 | [Vize](https://github.com/ubugeeei/vize)                                                                                   | Not documented                                                                                                                                                                                                             | Rust toolchain for Vue with its own linter and an oxlint plugin                                                                                |
 | oxfmt [`sortTailwindcss`](https://oxc.rs/docs/guide/usage/formatter/config-file-reference.html#sorttailwindcss)            | Sorting only, documented: "Sort Tailwind CSS classes", with Vue in its languages                                                                                                                                           | Formatter option, disabled by default                                                                                                          |
 | [prettier-plugin-tailwindcss](https://github.com/tailwindlabs/prettier-plugin-tailwindcss#sorting-non-standard-attributes) | Sorting only, documented: sorts `class` and `:class` by default                                                                                                                                                            | Prettier plugin; also removes duplicate classes                                                                                                |
-
-Each claim was checked on the tool's own page on 2026-11-22.
 
 ## License
 

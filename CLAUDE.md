@@ -47,7 +47,12 @@ yarn format          # oxfmt, also sorts package.json
 
 ## Git and releases
 
-- Commit straight to `main`: no pull request, no trailers.
+- This is a public npm package: every push to `main` can publish. Work on a
+  `<type>/<slug>` branch, test locally, squash into one Conventional Commit,
+  and open a pull request only after Quentin approves its description. No
+  trailers.
+- Never cite a personal or private project anywhere in this repository:
+  README, docs, tests, fixtures, commits.
 - Conventional Commits decide releases: `feat` gives a minor, `fix` and `perf`
   a patch, `!` or a `BREAKING CHANGE` footer a major, anything else nothing.
   Use `chore`, `docs`, `test`, `ci` or `refactor` for work that must not

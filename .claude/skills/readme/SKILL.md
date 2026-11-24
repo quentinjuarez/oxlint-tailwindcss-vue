@@ -27,8 +27,9 @@ before each publish.
    ("No template linting yet"), the oxlint-tailwindcss frameworks page
    ("Classes written in a template are not checked yet"), oxc#21936. Fetch each
    quote again before a release: these pages change.
-5. **Numbers carry a date, the versions and the machine**, and never sit in
-   the first sentence.
+5. **The README talks about the reader's project**, in the tone of the
+   author's other public packages: no personal or private project, no dates,
+   no machine, no benchmark a reader cannot reproduce.
 6. **Headings**: one H2 phrased as the real question, "Why doesn't
    oxlint-tailwindcss check classes in Vue templates?"; FAQ entries as H3
    questions answered in one or two sentences that start with the fact; every
@@ -72,15 +73,14 @@ before each publish.
    of findings with their rule ids, and what is not checked.
 7. `## How oxlint-tailwindcss-vue works`: the four steps, and why positions
    are exact (rule 15).
-8. `## Results on a real Vue app`: dated numbers with versions (rule 5).
-9. `## Options`: flags, config lookup, exit codes.
-10. `## Run it in CI and in a pre-commit hook`.
-11. `## Requirements`: Node range, oxlint and oxlint-tailwindcss minimums,
+8. `## Options`: flags, config lookup, exit codes.
+9. `## Run it in CI and in a pre-commit hook`.
+10. `## Requirements`: Node range, oxlint and oxlint-tailwindcss minimums,
     Tailwind CSS 4.1.15 or newer, Vue 3 single-file components.
-12. `## Limitations`.
-13. `## FAQ`.
-14. `## Alternatives and related tools`.
-15. `## License`.
+11. `## Limitations`.
+12. `## FAQ`.
+13. `## Alternatives and related tools`.
+14. `## License`.
 
 ## Red flags
 

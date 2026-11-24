@@ -21,7 +21,7 @@ you report findings.
    lock (`~/.claude/bin/heavy-lock yarn build`), then compare each flag with
    `node dist/cli.js --help`.
 3. Every quote from an outside page still matches the page today (fetch it).
-4. Every number has a date and versions, and matches its source.
+4. No personal or private project, no dates and no machine (skill rule 5).
 5. Every claim about another tool in the Alternatives table is documented on
    that tool's own page (fetch it).
 6. The example output is a real run: run the example yourself and compare.
