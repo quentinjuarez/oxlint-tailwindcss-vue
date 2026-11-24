@@ -136,8 +136,9 @@ What oxlint-tailwindcss-vue skips, with the reason code that `--debug` prints:
 | `no-room`, `quote-in-unquoted-value`, `parse-safety-net` | An attribute that cannot be rewritten without moving a character                       |
 | `sfc-parse-error`                                        | A file that Vue cannot parse, also reported as not checked                             |
 
-`v-bind="{ class: classes }"` and dynamic arguments such as `:[name]` are not
-checked either.
+`v-bind="{ class: classes }"`, dynamic arguments such as `:[name]` and the
+`prefetched-class` of `NuxtLink` are not checked either. Add
+`prefetched-class` to `settings.tailwindcss.attributes` to check it.
 
 ## How oxlint-tailwindcss-vue works
 
@@ -379,9 +380,13 @@ CSS modules, only `:global()` names count.
 
 ### Does oxlint-tailwindcss-vue work with Nuxt?
 
-Not tested yet, so Nuxt support is not claimed. The class props of `NuxtLink`
-are matched by name, like those of `RouterLink`, but no Nuxt project runs in
-the tests.
+Yes: oxlint-tailwindcss-vue checks the pages, layouts and components of a
+Nuxt 4 project under `app/`, dynamic routes such as `[id].vue` and the
+`active-class` and `exact-active-class` of `NuxtLink` included, with no
+Nuxt-specific option (see the test project `test/fixtures/projects/nuxt`).
+Set `settings.tailwindcss.entryPoint` to the CSS file that imports Tailwind
+CSS, relative to the oxlint config and without Nuxt's `~/` alias, such as
+`app/assets/css/main.css`.
 
 ### Does oxlint-tailwindcss-vue support Svelte, Astro, Vue 2 or Tailwind CSS v3?
 

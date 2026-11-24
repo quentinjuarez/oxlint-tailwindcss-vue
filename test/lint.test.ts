@@ -360,6 +360,76 @@ describe('lint on other projects', () => {
   );
 
   it(
+    'checks a Nuxt 4 project: layouts, components, NuxtLink and route pages',
+    async () => {
+      const nuxt = join(projects, 'nuxt');
+      const path = (file: string) => relative(nuxt, file).split(sep).join('/');
+      const result = await lint({ cwd: nuxt });
+      expect(result.files.map(({ file }) => path(file))).toEqual([
+        'app/app.vue',
+        'app/components/AppNav.vue',
+        'app/layouts/default.vue',
+        'app/pages/(marketing)/[id].vue',
+        'app/pages/[...slug].vue',
+        'app/pages/index.vue',
+      ]);
+      expect(
+        result.findings.map(({ file, rule, start, message }) => ({
+          file: path(file),
+          rule,
+          line: start.line,
+          column: start.column,
+          message,
+        })),
+      ).toEqual([
+        {
+          file: 'app/components/AppNav.vue',
+          rule: 'tailwindcss/no-unknown-classes',
+          line: 3,
+          column: 35,
+          message: '"nav-unknown" is not a valid Tailwind class.',
+        },
+        {
+          file: 'app/components/AppNav.vue',
+          rule: 'tailwindcss/no-duplicate-classes',
+          line: 4,
+          column: 47,
+          message: expect.stringContaining('underline'),
+        },
+        {
+          file: 'app/layouts/default.vue',
+          rule: 'tailwindcss/no-unknown-classes',
+          line: 4,
+          column: 17,
+          message: '"layout-unknown" is not a valid Tailwind class.',
+        },
+        {
+          file: 'app/pages/(marketing)/[id].vue',
+          rule: 'tailwindcss/no-unknown-classes',
+          line: 2,
+          column: 12,
+          message: '"id-unknown" is not a valid Tailwind class.',
+        },
+        {
+          file: 'app/pages/[...slug].vue',
+          rule: 'tailwindcss/no-unknown-classes',
+          line: 2,
+          column: 18,
+          message: '"slug-unknown" is not a valid Tailwind class.',
+        },
+        {
+          file: 'app/pages/index.vue',
+          rule: 'tailwindcss/no-conflicting-classes',
+          line: 8,
+          column: 30,
+          message: expect.stringContaining('p-2'),
+        },
+      ]);
+    },
+    TIMEOUT,
+  );
+
+  it(
     'uses the given config and its plugin alias',
     async () => {
       const alias = join(projects, 'alias');

@@ -6,6 +6,7 @@
     "cli",
     "lint",
     "linter",
+    "nuxt",
     "oxc",
     "oxlint",
     "oxlint-tailwindcss",

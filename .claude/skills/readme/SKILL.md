@@ -50,9 +50,9 @@ before each publish.
 12. **npm description**: under 150 characters, no angle brackets (write
     "Vue templates", not `<template>`), same sentence as the GitHub About.
 13. **No llms.txt and no keyword stuffing**: neither has a measured effect.
-    Keywords: cli, lint, linter, oxc, oxlint, oxlint-tailwindcss, tailwind,
-    tailwindcss, tailwindcss-v4, template, vue, vue-sfc, vue3 (add nuxt only
-    after a Nuxt fixture passes). Never `oxlint-plugin`: this is not a plugin.
+    Keywords: cli, lint, linter, nuxt, oxc, oxlint, oxlint-tailwindcss,
+    tailwind, tailwindcss, tailwindcss-v4, template, vue, vue-sfc, vue3. Never
+    `oxlint-plugin`: this is not a plugin.
 14. **Never claim untested support** (Svelte, Astro, Vue 2, Tailwind v3, Pug).
 15. **Copy technical facts from `docs/design.md` and the code, never from
     memory or from a summary.** For example, positions are exact because the

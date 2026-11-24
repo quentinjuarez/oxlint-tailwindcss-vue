@@ -118,8 +118,8 @@ Rules:
    end inside the opening tag of a `v-pre` element (parsing them would switch
    off directives in every later file).
 6. Checked attributes: `class`, `:class`, `v-bind:class`, the class props of
-   Vue's built-in components (`Transition`, `TransitionGroup`, `RouterLink`),
-   and every attribute listed in the user's oxlint-tailwindcss `attributes` or
+   `Transition`, `TransitionGroup`, `RouterLink` and `NuxtLink`, and every
+   attribute listed in the user's oxlint-tailwindcss `attributes` or
    `attributePatterns` settings, in kebab or camel case. A bound value of an
    attribute from these settings is read like the plugin reads a JSX
    attribute: in an object, the values and never the keys, which name slots
