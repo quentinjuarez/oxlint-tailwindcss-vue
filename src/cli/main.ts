@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 
 import { ToolError, UsageError } from '../errors.js';
 import { lint } from '../lint.js';
-import { exitCodeFor, formatReport } from '../output/format.js';
+import { exitCodeFor, formatDebug, formatReport } from '../output/format.js';
 import { parseCliArgs, type CliOptions } from './args.js';
 
 export interface CliIo {
@@ -28,8 +28,8 @@ Options:
       --max-warnings <n>    exit 1 above n warnings
       --deny-warnings       exit 1 on any warning
       --debug               list skipped attributes with their reason
-                            (default format only), and print the stack of
-                            an unexpected error
+                            (on stderr with json and github), and print
+                            the stack of an unexpected error
   -h, --help                show this help
   -V, --version             show the version
 
@@ -79,6 +79,12 @@ async function run(options: CliOptions, io: CliIo): Promise<number> {
     cwd: io.cwd,
     ...(io.signal === undefined ? {} : { signal: io.signal }),
   });
+  if (result.oxlintStderr !== undefined) {
+    io.stderr.write(`${result.oxlintStderr}\n`);
+  }
+  if (debug && format !== 'default') {
+    io.stderr.write(formatDebug(result, { cwd: io.cwd, color: false }));
+  }
   if (result.files.length === 0) {
     const notice = 'No .vue files to check.\n';
     if (format === 'default') {

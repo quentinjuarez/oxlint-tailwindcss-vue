@@ -79,7 +79,7 @@ describe('main', () => {
     expect(code).toBe(0);
     expect(out).toContain('oxlint-tailwindcss-vue [options] [paths...]');
     expect(out).toContain('--max-warnings');
-    expect(out).toContain('(default format only)');
+    expect(out).toContain('(on stderr with json and github)');
   });
 
   it('prints the version', async () => {
@@ -161,10 +161,11 @@ describe('main', () => {
   it(
     'returns 1 and prints the findings of the basic project',
     async () => {
-      const { code, out } = await run([]);
+      const { code, out, err } = await run([]);
       expect(code).toBe(1);
       expect(out).toContain('src/App.vue:');
       expect(out).not.toContain('\u001B[');
+      expect(err).toBe('');
     },
     TIMEOUT,
   );
@@ -200,6 +201,48 @@ describe('main', () => {
     },
     TIMEOUT,
   );
+
+  it('prints what oxlint printed on stderr, apart from the report', async () => {
+    const lint = vi
+      .spyOn(lintModule, 'lint')
+      .mockResolvedValue({ ...oneError, oxlintStderr: '[vendor] warning' });
+    const { code, out, err } = await run(['-f', 'json']);
+    lint.mockRestore();
+    expect(code).toBe(1);
+    expect(JSON.parse(out)).toHaveProperty('diagnostics');
+    expect(err).toBe('[vendor] warning\n');
+  });
+
+  it('prints the --debug notes on stderr with json and github', async () => {
+    const skipped: LintResult = {
+      ...oneError,
+      files: [
+        {
+          file: appFile,
+          skipped: [
+            {
+              code: 'entity',
+              attribute: 'class',
+              span: { start: 60, end: 80 },
+              line: 5,
+              column: 3,
+            },
+          ],
+          notices: [],
+        },
+      ],
+    };
+    const lint = vi.spyOn(lintModule, 'lint').mockResolvedValue(skipped);
+    const json = await run(['--debug', '-f', 'json']);
+    const github = await run(['--debug', '-f', 'github']);
+    const withoutDebug = await run(['-f', 'json']);
+    lint.mockRestore();
+    expect(JSON.parse(json.out)).toHaveProperty('diagnostics');
+    expect(json.err).toBe('src/App.vue:5:3 skipped entity class\n');
+    expect(github.out).not.toContain('skipped');
+    expect(github.err).toBe('src/App.vue:5:3 skipped entity class\n');
+    expect(withoutDebug.err).toBe('');
+  });
 
   describe('colors', () => {
     it.each([

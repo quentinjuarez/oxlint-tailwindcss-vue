@@ -430,6 +430,40 @@ describe('lint on other projects', () => {
   );
 
   it(
+    'returns what oxlint plugins print on stderr, each line once',
+    async () => {
+      const warning = '[vendor] tested against an older engine';
+      const plugin = [
+        `console.warn(${JSON.stringify(warning)});`,
+        'export default {',
+        "  meta: { name: 'tailwindcss' },",
+        '  rules: { quiet: { create: () => ({}) } },',
+        '};',
+        '',
+      ].join('\n');
+      const config = (specifier: string) =>
+        JSON.stringify({
+          jsPlugins: [specifier],
+          rules: { 'tailwindcss/quiet': 'error' },
+        });
+      const vue = '<template>\n  <p class="p-2"></p>\n</template>\n';
+      const dir = project({
+        '.oxlintrc.json': config('./oxlint-tailwindcss/index.mjs'),
+        'oxlint-tailwindcss/index.mjs': plugin,
+        'src/App.vue': vue,
+        'packages/b/.oxlintrc.json': config(
+          '../../oxlint-tailwindcss/index.mjs',
+        ),
+        'packages/b/src/B.vue': vue,
+      });
+      const result = await lint({ cwd: dir });
+      expect(result.files).toHaveLength(2);
+      expect(result.oxlintStderr).toBe(warning);
+    },
+    TIMEOUT,
+  );
+
+  it(
     'uses the given config and its plugin alias',
     async () => {
       const alias = join(projects, 'alias');

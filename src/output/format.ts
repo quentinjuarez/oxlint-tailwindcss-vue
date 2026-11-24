@@ -60,15 +60,52 @@ function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? '' : 's'}`;
 }
 
+type Paint = (style: 'red' | 'yellow' | 'dim' | 'bold', text: string) => string;
+
+function painter(color: boolean): Paint {
+  return (style, text) =>
+    color ? styleText(style, text, { validateStream: false }) : text;
+}
+
+export function formatDebug(
+  result: LintResult,
+  options: { cwd: string; color: boolean },
+): string {
+  const lines = debugLines(result, options.cwd, painter(options.color));
+  return lines.length === 0 ? '' : `${lines.join('\n')}\n`;
+}
+
+function debugLines(result: LintResult, cwd: string, paint: Paint): string[] {
+  const lines: string[] = [];
+  for (const skipped of result.skippedConfigs) {
+    lines.push(
+      `skipped ${plural(skipped.files, '.vue file')}: ${displayPath(skipped.config, cwd)} does not load oxlint-tailwindcss`,
+    );
+  }
+  for (const report of result.files) {
+    const path = displayPath(report.file, cwd);
+    for (const skip of report.skipped) {
+      lines.push(
+        `${paint('dim', `${path}:${skip.line}:${skip.column}`)} skipped ${skip.code} ${skip.attribute}`,
+      );
+    }
+    for (const notice of report.notices) {
+      lines.push(
+        `${paint('dim', `${path}:${notice.line}:${notice.column}`)} notice ${notice.code} ${notice.key}`,
+      );
+    }
+  }
+  return lines;
+}
+
 function formatDefault(
   result: LintResult,
   findings: Finding[],
   notChecked: FileReport[],
   options: FormatOptions,
 ): string {
-  const { cwd, color } = options;
-  const paint = (style: 'red' | 'yellow' | 'dim' | 'bold', text: string) =>
-    color ? styleText(style, text, { validateStream: false }) : text;
+  const { cwd } = options;
+  const paint = painter(options.color);
   const lines: string[] = [];
 
   for (const finding of findings) {
@@ -86,26 +123,7 @@ function formatDefault(
       `${displayPath(report.file, cwd)} ${paint('red', 'not checked:')} ${report.notChecked}`,
     );
   }
-  if (options.debug) {
-    for (const skipped of result.skippedConfigs) {
-      lines.push(
-        `skipped ${plural(skipped.files, '.vue file')}: ${displayPath(skipped.config, cwd)} does not load oxlint-tailwindcss`,
-      );
-    }
-    for (const report of result.files) {
-      const path = displayPath(report.file, cwd);
-      for (const skip of report.skipped) {
-        lines.push(
-          `${paint('dim', `${path}:${skip.line}:${skip.column}`)} skipped ${skip.code} ${skip.attribute}`,
-        );
-      }
-      for (const notice of report.notices) {
-        lines.push(
-          `${paint('dim', `${path}:${notice.line}:${notice.column}`)} notice ${notice.code} ${notice.key}`,
-        );
-      }
-    }
-  }
+  if (options.debug) lines.push(...debugLines(result, cwd, paint));
 
   if (findings.length === 0 && notChecked.length === 0) {
     lines.push(`No problems found in ${plural(result.files.length, 'file')}.`);

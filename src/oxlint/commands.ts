@@ -122,7 +122,7 @@ export async function lintVirtualFiles(
     files: readonly string[];
     signal?: AbortSignal;
   },
-): Promise<OxlintReport> {
+): Promise<OxlintReport & { stderr: string }> {
   const relatives = options.files.map((file) => {
     if (!isAbsolute(file)) return file;
     const path = relative(options.cwd, file);
@@ -130,7 +130,11 @@ export async function lintVirtualFiles(
     // and takes an absolute path outside its cwd.
     return path.startsWith('..') ? file : path;
   });
-  const merged: OxlintReport = { diagnostics: [], number_of_files: 0 };
+  const merged: OxlintReport & { stderr: string } = {
+    diagnostics: [],
+    number_of_files: 0,
+    stderr: '',
+  };
   for (const chunk of chunkByLength(relatives, MAX_ARGS_LENGTH)) {
     // oxlint already uses every core; chunks run one after the other.
     // oxlint-disable-next-line no-await-in-loop
@@ -168,6 +172,7 @@ export async function lintVirtualFiles(
     }
     merged.diagnostics.push(...report.diagnostics);
     merged.number_of_files += report.number_of_files;
+    merged.stderr += stderr;
   }
   return merged;
 }

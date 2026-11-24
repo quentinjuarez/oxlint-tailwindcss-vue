@@ -79,11 +79,13 @@ export interface LintResult {
   files: FileReport[];
   skippedConfigs: SkippedConfig[];
   warningOptions: { denyWarnings?: boolean; maxWarnings?: number };
+  oxlintStderr?: string;
 }
 
 interface GroupResult {
   findings: Finding[];
   files: FileReport[];
+  stderr: string;
   skipped?: SkippedConfig;
 }
 
@@ -146,6 +148,7 @@ async function run(options: LintOptions): Promise<LintResult> {
     const findings: Finding[] = [];
     const files: FileReport[] = [];
     const skippedConfigs: SkippedConfig[] = [];
+    const stderr: string[] = [];
     for (const [index, [configFile, groupFiles]] of [...groups].entries()) {
       // oxlint already uses every core; groups run one after the other.
       // oxlint-disable-next-line no-await-in-loop
@@ -161,10 +164,12 @@ async function run(options: LintOptions): Promise<LintResult> {
       });
       findings.push(...result.findings);
       files.push(...result.files);
+      stderr.push(result.stderr);
       if (result.skipped !== undefined) skippedConfigs.push(result.skipped);
     }
     if (skippedConfigs.length === groups.size)
       throw noPluginError(skippedConfigs);
+    const oxlintStderr = uniqueLines(stderr);
     return {
       findings: findings.toSorted(compareFindings),
       files: files.toSorted((a, b) => compareText(a.file, b.file)),
@@ -172,10 +177,18 @@ async function run(options: LintOptions): Promise<LintResult> {
         compareText(a.config, b.config),
       ),
       warningOptions,
+      ...(oxlintStderr === '' ? {} : { oxlintStderr }),
     };
   } finally {
     temp.remove();
   }
+}
+
+function uniqueLines(texts: readonly string[]): string {
+  const lines = texts
+    .flatMap((text) => text.split(/\r?\n/))
+    .filter((line) => line.trim() !== '');
+  return [...new Set(lines)].join('\n');
 }
 
 function configPrinter(
@@ -244,6 +257,7 @@ async function lintGroup(group: GroupRun): Promise<GroupResult> {
     return {
       findings: [],
       files: [],
+      stderr: '',
       skipped: { config: configFile, files: group.files.length },
     };
   }
@@ -293,7 +307,7 @@ async function lintGroup(group: GroupRun): Promise<GroupResult> {
   const childCwd = mirror(dir, configDir, cwd);
   mkdirSync(childCwd, { recursive: true });
   signal?.throwIfAborted();
-  const { diagnostics } = await lintVirtualFiles(oxlint, {
+  const { diagnostics, stderr } = await lintVirtualFiles(oxlint, {
     configPath,
     cwd: childCwd,
     files: [...sources.keys()],
@@ -307,6 +321,7 @@ async function lintGroup(group: GroupRun): Promise<GroupResult> {
       themes: { cwd, paths: absolutePathsIn(derived) },
     }),
     files,
+    stderr,
   };
 }
 

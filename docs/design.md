@@ -242,6 +242,11 @@ integration test pins the plugin's message format.
   reports script blocks, so both outputs can be merged.
 - `github`: workflow commands, so findings show up as annotations in pull
   requests. Columns count UTF-16 code units.
+- stderr, in every format: what oxlint and its JS plugins print while linting
+  the virtual files (oxlint-tailwindcss warns there when the Tailwind CSS
+  engine is newer than the one it was tested with), each line once across
+  oxlint runs. With `json` and `github`, the `--debug` notes go there too, so
+  stdout holds only the report.
 
 ## Exit codes
 
@@ -266,8 +271,8 @@ oxlint-tailwindcss-vue [options] [paths...]
       --max-warnings <n>    exit 1 above n warnings
       --deny-warnings       exit 1 on any warning
       --debug               list skipped attributes with their reason
-                            (default format only), and print the stack of
-                            an unexpected error
+                            (on stderr with json and github), and print
+                            the stack of an unexpected error
   -h, --help
   -V, --version
 ```
@@ -283,7 +288,8 @@ at the issues URL of `package.json`; the error is kept as its `cause`, and
   and the skipped attributes with their reason.
 - `lint(options)` runs the whole pipeline and returns the mapped diagnostics,
   with `warningOptions`: the `denyWarnings` and `maxWarnings` of the root
-  config's `options`, which the CLI applies.
+  config's `options`, which the CLI applies, and `oxlintStderr` when oxlint or
+  its JS plugins printed anything on stderr, which the CLI prints.
 
 ## Temp files and signals
 
