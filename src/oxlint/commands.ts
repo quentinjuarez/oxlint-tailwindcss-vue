@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
 
 import { ToolError } from '../errors.js';
@@ -30,6 +30,7 @@ export interface FileSelection {
 }
 
 const MAX_ARGS_LENGTH = 30_000;
+const MAX_FIX_PASSES = 10;
 
 function failure(action: string, stdout: string, stderr: string): ToolError {
   const text = `${stdout}\n${stderr}`.trim();
@@ -120,6 +121,7 @@ export async function lintVirtualFiles(
     configPath: string;
     cwd: string;
     files: readonly string[];
+    fix?: boolean;
     signal?: AbortSignal;
   },
 ): Promise<OxlintReport & { stderr: string }> {
@@ -130,11 +132,8 @@ export async function lintVirtualFiles(
     // and takes an absolute path outside its cwd.
     return path.startsWith('..') ? file : path;
   });
-  const merged: OxlintReport & { stderr: string } = {
-    diagnostics: [],
-    number_of_files: 0,
-    stderr: '',
-  };
+  const merged: OxlintReport = { diagnostics: [], number_of_files: 0 };
+  const stderrs: string[] = [];
   for (const chunk of chunkByLength(relatives, MAX_ARGS_LENGTH)) {
     // oxlint already uses every core; chunks run one after the other.
     // oxlint-disable-next-line no-await-in-loop
@@ -143,6 +142,7 @@ export async function lintVirtualFiles(
       [
         '-c',
         options.configPath,
+        ...(options.fix === true ? ['--fix'] : []),
         '--format',
         'json',
         '-A',
@@ -172,7 +172,35 @@ export async function lintVirtualFiles(
     }
     merged.diagnostics.push(...report.diagnostics);
     merged.number_of_files += report.number_of_files;
-    merged.stderr += stderr;
+    stderrs.push(stderr);
   }
-  return merged;
+  return { ...merged, stderr: stderrs.join('\n') };
+}
+
+export async function fixVirtualFiles(
+  oxlint: OxlintInstall,
+  options: {
+    configPath: string;
+    cwd: string;
+    files: readonly string[];
+    signal?: AbortSignal;
+  },
+): Promise<{ stderr: string }> {
+  const read = (file: string): string =>
+    readFileSync(resolve(options.cwd, file), 'utf8');
+  let files = options.files;
+  const stderrs: string[] = [];
+  for (let pass = 0; pass < MAX_FIX_PASSES && files.length > 0; pass++) {
+    const before = files.map(read);
+    // Each pass starts from what the previous pass wrote.
+    // oxlint-disable-next-line no-await-in-loop
+    const report = await lintVirtualFiles(oxlint, {
+      ...options,
+      files,
+      fix: true,
+    });
+    stderrs.push(report.stderr);
+    files = files.filter((file, index) => read(file) !== before[index]);
+  }
+  return { stderr: stderrs.join('\n') };
 }

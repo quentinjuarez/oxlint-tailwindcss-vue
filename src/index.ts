@@ -1,3 +1,5 @@
+export { ToolError } from './errors.js';
+export type { FixRefusalCode } from './fix/copy-back.js';
 export { lint } from './lint.js';
 export type {
   FileReport,
@@ -5,6 +7,7 @@ export type {
   LintOptions,
   LintResult,
   Located,
+  RefusedFix,
   SkippedConfig,
 } from './lint.js';
 export type { Position } from './positions.js';

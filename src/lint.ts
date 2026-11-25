@@ -18,8 +18,16 @@ import {
   type TailwindSettings,
 } from './config/derive.js';
 import { ToolError } from './errors.js';
+import {
+  copyBack,
+  type CopyBackInput,
+  type CopyBackResult,
+  type FixRefusalCode,
+  type Refusal,
+} from './fix/copy-back.js';
 import { mapDiagnostics, type VirtualSource } from './map-diagnostics.js';
 import {
+  fixVirtualFiles,
   listLintedFiles,
   lintVirtualFiles,
   printConfig,
@@ -33,8 +41,13 @@ import {
 } from './oxlint/resolve.js';
 import { columnOf, type Position } from './positions.js';
 import { createTempRoot, pruneStaleTempRoots } from './temp.js';
-import type { Notice, Skip, VirtualizeResult } from './virtual/types.js';
-import { virtualize } from './virtual/virtualize.js';
+import type {
+  Notice,
+  Rewrite,
+  Skip,
+  VirtualizeResult,
+} from './virtual/types.js';
+import { virtualize, virtualizeForFix } from './virtual/virtualize.js';
 
 export interface LintOptions {
   cwd?: string;
@@ -43,6 +56,7 @@ export interface LintOptions {
   ignorePath?: string;
   ignorePatterns?: string[];
   noIgnore?: boolean;
+  fix?: boolean;
   signal?: AbortSignal;
 }
 
@@ -62,11 +76,17 @@ export interface Located {
   column: number;
 }
 
+export interface RefusedFix extends Located {
+  code: FixRefusalCode;
+}
+
 export interface FileReport {
   file: string;
   skipped: (Skip & Located)[];
   notices: (Notice & Located)[];
   notChecked?: string;
+  fixed?: true;
+  refusedFixes?: RefusedFix[];
 }
 
 export interface SkippedConfig {
@@ -99,6 +119,15 @@ interface GroupRun {
   dir: string;
   signal: AbortSignal | undefined;
 }
+
+interface PlannedFix {
+  file: string;
+  source: string;
+  text: string;
+  refused: Refusal[];
+}
+
+type FixOutcome = Pick<FileReport, 'fixed' | 'refusedFixes'>;
 
 const EXTERNAL = '_external';
 const VUE_PARSE_ERROR = 'Vue could not parse this file.';
@@ -145,14 +174,8 @@ async function run(options: LintOptions): Promise<LintResult> {
 
   const temp = createTempRoot();
   try {
-    const findings: Finding[] = [];
-    const files: FileReport[] = [];
-    const skippedConfigs: SkippedConfig[] = [];
-    const stderr: string[] = [];
-    for (const [index, [configFile, groupFiles]] of [...groups].entries()) {
-      // oxlint already uses every core; groups run one after the other.
-      // oxlint-disable-next-line no-await-in-loop
-      const result = await lintGroup({
+    const groupRuns = [...groups].map(
+      ([configFile, groupFiles], index): GroupRun => ({
         oxlint,
         cwd,
         configFile,
@@ -161,7 +184,31 @@ async function run(options: LintOptions): Promise<LintResult> {
         files: groupFiles,
         dir: join(temp.path, String(index)),
         signal,
-      });
+      }),
+    );
+    const stderr: string[] = [];
+    const planned: PlannedFix[] = [];
+    if (options.fix === true) {
+      for (const [index, group] of groupRuns.entries()) {
+        // oxlint already uses every core; groups run one after the other.
+        // oxlint-disable-next-line no-await-in-loop
+        const result = await fixGroup({
+          ...group,
+          dir: join(temp.path, 'fix', String(index)),
+        });
+        planned.push(...result.planned);
+        stderr.push(result.stderr);
+      }
+      signal?.throwIfAborted();
+    }
+    const fixes = writeFixes(planned);
+    const findings: Finding[] = [];
+    const files: FileReport[] = [];
+    const skippedConfigs: SkippedConfig[] = [];
+    for (const group of groupRuns) {
+      // oxlint already uses every core; groups run one after the other.
+      // oxlint-disable-next-line no-await-in-loop
+      const result = await lintGroup(group);
       findings.push(...result.findings);
       files.push(...result.files);
       stderr.push(result.stderr);
@@ -169,6 +216,7 @@ async function run(options: LintOptions): Promise<LintResult> {
     }
     if (skippedConfigs.length === groups.size)
       throw noPluginError(skippedConfigs);
+    for (const report of files) Object.assign(report, fixes.get(report.file));
     const oxlintStderr = uniqueLines(stderr);
     return {
       findings: findings.toSorted(compareFindings),
@@ -261,7 +309,6 @@ async function lintGroup(group: GroupRun): Promise<GroupResult> {
       skipped: { config: configFile, files: group.files.length },
     };
   }
-  const configDir = dirname(configFile);
   const settings = tailwindSettingsOf(printed);
   const files: FileReport[] = [];
   const sources = new Map<string, VirtualSource & { styleClasses: string[] }>();
@@ -271,6 +318,7 @@ async function lintGroup(group: GroupRun): Promise<GroupResult> {
       file,
       source,
       settings,
+      false,
     );
     const locate = locator(source);
     const report: FileReport = {
@@ -289,23 +337,19 @@ async function lintGroup(group: GroupRun): Promise<GroupResult> {
       }
       continue;
     }
-    const virtualPath = `${mirror(dir, configDir, file)}.ts`;
-    mkdirSync(dirname(virtualPath), { recursive: true });
-    writeFileSync(virtualPath, code);
-    sources.set(virtualPath, { report, source, code, styleClasses });
+    sources.set(writeVirtualFile(group, file, code), {
+      report,
+      source,
+      code,
+      styleClasses,
+    });
   }
 
-  const derived = deriveConfig({
+  const { derived, configPath, childCwd } = writeGroupConfig(
+    group,
     printed,
-    configFile,
-    cwd,
-    respectEslintDisableDirectives: group.respectEslintDisableDirectives,
-  });
-  const configPath = join(dir, '.oxlintrc.json');
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(configPath, JSON.stringify(derived));
-  const childCwd = mirror(dir, configDir, cwd);
-  mkdirSync(childCwd, { recursive: true });
+    false,
+  );
   signal?.throwIfAborted();
   const { diagnostics, stderr } = await lintVirtualFiles(oxlint, {
     configPath,
@@ -325,6 +369,113 @@ async function lintGroup(group: GroupRun): Promise<GroupResult> {
   };
 }
 
+async function fixGroup(
+  group: GroupRun,
+): Promise<{ planned: PlannedFix[]; stderr: string }> {
+  const { oxlint, configFile, signal } = group;
+  const printed = await group.printedConfig(configFile);
+  signal?.throwIfAborted();
+  if (!loadsTailwindPlugin(printed)) return { planned: [], stderr: '' };
+  const settings = tailwindSettingsOf(printed);
+  const virtualFiles = new Map<
+    string,
+    { file: string; source: string; before: string; rewrites: Rewrite[] }
+  >();
+  for (const file of group.files) {
+    const source = readSource(file);
+    const { code, rewrites } = virtualizeFile(file, source, settings, true);
+    if (code === null) continue;
+    virtualFiles.set(writeVirtualFile(group, file, code), {
+      file,
+      source,
+      before: code,
+      rewrites,
+    });
+  }
+
+  const { configPath, childCwd } = writeGroupConfig(group, printed, true);
+  signal?.throwIfAborted();
+  const { stderr } = await fixVirtualFiles(oxlint, {
+    configPath,
+    cwd: childCwd,
+    files: [...virtualFiles.keys()],
+    ...(signal === undefined ? {} : { signal }),
+  });
+  const planned: PlannedFix[] = [];
+  for (const [path, { file, source, before, rewrites }] of virtualFiles) {
+    const after = readFileSync(path, 'utf8');
+    if (after === before) continue;
+    planned.push({
+      file,
+      source,
+      ...copyBackFile(file, { source, before, after, rewrites }),
+    });
+  }
+  return { planned, stderr };
+}
+
+function writeVirtualFile(group: GroupRun, file: string, code: string): string {
+  const virtualPath = `${mirror(group.dir, dirname(group.configFile), file)}.ts`;
+  mkdirSync(dirname(virtualPath), { recursive: true });
+  writeFileSync(virtualPath, code);
+  return virtualPath;
+}
+
+function writeGroupConfig(
+  group: GroupRun,
+  printed: PrintedConfig,
+  fix: boolean,
+): { derived: Record<string, unknown>; configPath: string; childCwd: string } {
+  const { cwd, configFile, dir } = group;
+  const derived = deriveConfig({
+    printed,
+    configFile,
+    cwd,
+    respectEslintDisableDirectives: group.respectEslintDisableDirectives,
+    fix,
+  });
+  const configPath = join(dir, '.oxlintrc.json');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(configPath, JSON.stringify(derived));
+  const childCwd = mirror(dir, dirname(configFile), cwd);
+  mkdirSync(childCwd, { recursive: true });
+  return { derived, configPath, childCwd };
+}
+
+function writeFixes(planned: readonly PlannedFix[]): Map<string, FixOutcome> {
+  const outcomes = new Map<string, FixOutcome>();
+  for (const { file, source, text, refused } of planned) {
+    if (text === source) {
+      outcomes.set(file, fixOutcome(source, refused, false));
+    } else if (readBytes(file).equals(Buffer.from(source, 'utf8'))) {
+      writeSource(file, text);
+      outcomes.set(file, fixOutcome(text, refused, true));
+    } else {
+      outcomes.set(file, {
+        refusedFixes: [{ code: 'changed-on-disk', line: 1, column: 1 }],
+      });
+    }
+  }
+  return outcomes;
+}
+
+function fixOutcome(
+  text: string,
+  refused: readonly Refusal[],
+  written: boolean,
+): FixOutcome {
+  const locate = locator(text);
+  const outcome: FixOutcome = {};
+  if (written) outcome.fixed = true;
+  if (refused.length > 0) {
+    outcome.refusedFixes = refused.map(({ code, offset }) => ({
+      code,
+      ...locate(offset),
+    }));
+  }
+  return outcome;
+}
+
 function absolutePathsIn(value: unknown): string[] {
   if (typeof value === 'string') return isAbsolute(value) ? [value] : [];
   if (typeof value !== 'object' || value === null) return [];
@@ -332,8 +483,12 @@ function absolutePathsIn(value: unknown): string[] {
 }
 
 function readSource(file: string): string {
+  return readBytes(file).toString('utf8');
+}
+
+function readBytes(file: string): Buffer {
   try {
-    return readFileSync(file, 'utf8');
+    return readFileSync(file);
   } catch (error) {
     const message = `Cannot read ${file}: ${messageOf(error)}`;
     throw isMissingFile(error)
@@ -345,6 +500,17 @@ function readSource(file: string): string {
   }
 }
 
+function writeSource(file: string, text: string): void {
+  try {
+    writeFileSync(file, text);
+  } catch (error) {
+    throw new ToolError(
+      `Cannot write ${file}: ${messageOf(error)}`,
+      'Check that the file is writable, then run again.',
+    );
+  }
+}
+
 function isMissingFile(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 'ENOENT';
 }
@@ -353,16 +519,31 @@ function virtualizeFile(
   file: string,
   source: string,
   settings: TailwindSettings,
+  fix: boolean,
 ): VirtualizeResult {
   try {
-    return virtualize(source, settings);
+    return fix
+      ? virtualizeForFix(source, settings)
+      : virtualize(source, settings);
   } catch (error) {
-    throw new ToolError(
-      `Unexpected error on ${file}: ${messageOf(error)}`,
-      `This is a bug in oxlint-tailwindcss-vue. Report it with this file at ${ISSUES_URL}`,
-      { cause: error },
-    );
+    throw unexpectedError(file, error);
   }
+}
+
+function copyBackFile(file: string, input: CopyBackInput): CopyBackResult {
+  try {
+    return copyBack(input);
+  } catch (error) {
+    throw unexpectedError(file, error);
+  }
+}
+
+function unexpectedError(file: string, error: unknown): ToolError {
+  return new ToolError(
+    `Unexpected error on ${file}: ${messageOf(error)}`,
+    `This is a bug in oxlint-tailwindcss-vue. Report it with this file at ${ISSUES_URL}`,
+    { cause: error },
+  );
 }
 
 function messageOf(error: unknown): string {

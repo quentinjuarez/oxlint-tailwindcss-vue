@@ -7,12 +7,13 @@ import { parse, parseCache } from '@vue/compiler-sfc';
 import * as fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
+import { copyBack } from '../../src/fix/copy-back.js';
 import type {
   Rewrite,
   SourceSpan,
   VirtualizeResult,
 } from '../../src/virtual/types.js';
-import { virtualize } from '../../src/virtual/virtualize.js';
+import { virtualize, virtualizeForFix } from '../../src/virtual/virtualize.js';
 import { assertContract } from '../helpers/contract.js';
 
 const SEED = 20_261_122;
@@ -418,5 +419,19 @@ describe('virtualize: contract property', () => {
       seed: SEED,
       numRuns: RUNS,
     });
+  });
+
+  it('keeps the contract in fix mode', { timeout: 30_000 }, () => {
+    fc.assert(
+      fc.property(sfc, (source) => {
+        const { code, rewrites } = virtualizeForFix(source, OPTIONS);
+        if (code === null) return;
+        expect(() => assertContract(source, code, { fix: true })).not.toThrow();
+        expect(
+          copyBack({ source, before: code, after: code, rewrites }),
+        ).toEqual({ text: source, refused: [] });
+      }),
+      { seed: SEED, numRuns: RUNS },
+    );
   });
 });

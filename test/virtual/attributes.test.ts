@@ -28,6 +28,13 @@ describe('createAttributeMatcher', () => {
     expect(match('Transition', 'active-class')).toBeUndefined();
   });
 
+  it('checks prefetched-class on NuxtLink only', () => {
+    const match = createAttributeMatcher({});
+    expect(match('NuxtLink', 'prefetched-class')).toBe('class');
+    expect(match('nuxt-link', 'prefetchedClass')).toBe('class');
+    expect(match('RouterLink', 'prefetched-class')).toBeUndefined();
+  });
+
   it("adds the user's attributes in kebab and camel case", () => {
     const camel = createAttributeMatcher({ attributes: ['contentClass'] });
     expect(camel('UiCard', 'content-class')).toBe('setting');

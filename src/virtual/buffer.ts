@@ -4,6 +4,7 @@ function isLineBreak(character: string): boolean {
 
 export class VirtualBuffer {
   readonly #source: string;
+  readonly #encodeCrlf: boolean;
   readonly #units: string[];
   readonly #used: Uint8Array;
   readonly #regionOf: Int32Array;
@@ -11,8 +12,9 @@ export class VirtualBuffer {
   #open: number[] | undefined;
   #nextRegion = 1;
 
-  constructor(source: string) {
+  constructor(source: string, options: { encodeCrlf?: boolean } = {}) {
     this.#source = source;
+    this.#encodeCrlf = options.encodeCrlf ?? false;
     this.#units = Array.from({ length: source.length }, (_, index) =>
       this.#blank(index),
     );
@@ -62,7 +64,8 @@ export class VirtualBuffer {
   }
 
   copy(start: number, end: number): void {
-    this.write(start, this.#source.slice(start, end));
+    const text = this.#source.slice(start, end);
+    this.write(start, this.#encodeCrlf ? this.#withoutCrlf(start, text) : text);
   }
 
   placeCall(from: number, to: number, callee: string): boolean {
@@ -110,6 +113,16 @@ export class VirtualBuffer {
 
   toString(): string {
     return this.#units.join('');
+  }
+
+  #withoutCrlf(start: number, text: string): string {
+    let result = '';
+    for (let offset = 0; offset < text.length; offset++) {
+      const isCrlf =
+        text[offset] === '\r' && this.#source[start + offset + 1] === '\n';
+      result += isCrlf ? ' ' : (text[offset] as string);
+    }
+    return result;
   }
 
   #blank(index: number): string {

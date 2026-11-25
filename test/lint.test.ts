@@ -391,6 +391,13 @@ describe('lint on other projects', () => {
         },
         {
           file: 'app/components/AppNav.vue',
+          rule: 'tailwindcss/no-unknown-classes',
+          line: 3,
+          column: 76,
+          message: '"prefetch-unknown" is not a valid Tailwind class.',
+        },
+        {
+          file: 'app/components/AppNav.vue',
           rule: 'tailwindcss/no-duplicate-classes',
           line: 4,
           column: 47,
@@ -1553,7 +1560,12 @@ describe('temp roots', () => {
 });
 
 describe('public API', () => {
-  it('exports virtualize and lint, and nothing internal', () => {
-    expect(Object.keys(api).toSorted()).toEqual(['lint', 'virtualize']);
+  it('exports virtualize, lint and ToolError, and nothing internal', () => {
+    expect(Object.keys(api).toSorted()).toEqual([
+      'ToolError',
+      'lint',
+      'virtualize',
+    ]);
+    expect(api.ToolError).toBe(ToolError);
   });
 });

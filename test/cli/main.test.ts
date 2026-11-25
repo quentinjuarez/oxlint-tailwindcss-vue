@@ -80,6 +80,15 @@ describe('main', () => {
     expect(out).toContain('oxlint-tailwindcss-vue [options] [paths...]');
     expect(out).toContain('--max-warnings');
     expect(out).toContain('(on stderr with json and github)');
+    expect(out).toContain('--fix');
+    expect(out).toContain('refused fixes');
+  });
+
+  it('passes --fix to lint', async () => {
+    const lint = vi.spyOn(lintModule, 'lint').mockResolvedValue(oneError);
+    await run(['--fix']);
+    expect(lint).toHaveBeenCalledWith(expect.objectContaining({ fix: true }));
+    lint.mockRestore();
   });
 
   it('prints the version', async () => {

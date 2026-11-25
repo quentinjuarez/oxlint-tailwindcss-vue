@@ -10,7 +10,11 @@ function isAscii(character: string): boolean {
   return character.charCodeAt(0) < 128;
 }
 
-export function assertContract(source: string, code: string): void {
+export function assertContract(
+  source: string,
+  code: string,
+  options: { fix?: boolean } = {},
+): void {
   if (code.length !== source.length) {
     throw new Error(
       `length differs: source ${source.length}, virtual ${code.length}`,
@@ -19,6 +23,12 @@ export function assertContract(source: string, code: string): void {
   for (let index = 0; index < source.length; index++) {
     const original = source[index] as string;
     const virtual = code[index] as string;
+    const encodedCrlf =
+      options.fix === true &&
+      original === '\r' &&
+      source[index + 1] === '\n' &&
+      virtual === ' ';
+    if (encodedCrlf) continue;
     if (isLineBreak(original) || isLineBreak(virtual)) {
       if (original !== virtual) {
         throw new Error(

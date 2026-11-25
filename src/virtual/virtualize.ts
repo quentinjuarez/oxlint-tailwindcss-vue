@@ -41,6 +41,21 @@ export function virtualize(
   source: string,
   options: VirtualizeOptions = {},
 ): VirtualizeResult {
+  return build(source, options, false);
+}
+
+export function virtualizeForFix(
+  source: string,
+  options: VirtualizeOptions = {},
+): VirtualizeResult {
+  return build(source, options, true);
+}
+
+function build(
+  source: string,
+  options: VirtualizeOptions,
+  fix: boolean,
+): VirtualizeResult {
   const result: VirtualizeResult = {
     code: null,
     rewrites: [],
@@ -95,7 +110,7 @@ export function virtualize(
     return result;
   }
 
-  const buffer = new VirtualBuffer(source);
+  const buffer = new VirtualBuffer(source, { encodeCrlf: fix });
   const matchAttribute = createAttributeMatcher(options);
   const regions = new Map<number, Rewrite>();
   const record = (

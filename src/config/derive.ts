@@ -22,6 +22,7 @@ export interface DeriveInput {
   configFile: string;
   cwd: string;
   respectEslintDisableDirectives?: boolean | undefined;
+  fix?: boolean;
 }
 
 const TAILWIND_PLUGIN = /(^|[\\/])oxlint-tailwindcss([\\/]|$)/;
@@ -142,10 +143,12 @@ function globsOf(value: unknown): string[] {
 }
 
 export function deriveConfig(input: DeriveInput): Record<string, unknown> {
-  const { printed, configFile, cwd, respectEslintDisableDirectives } = input;
+  const { printed, configFile, cwd, respectEslintDisableDirectives, fix } =
+    input;
   const configDir = dirname(configFile);
   const plugin = findPlugin(printed);
   const prefix = `${aliasOf(plugin)}/`;
+  const lineWrapping = `${prefix}enforce-consistent-line-wrapping`;
   const pluginPath = resolvePluginPath(specifierOf(plugin), configFile);
 
   const absolute = (path: string): string => {
@@ -183,7 +186,8 @@ export function deriveConfig(input: DeriveInput): Record<string, unknown> {
   const onlyTailwind = (rules: Json = {}): Json => {
     const kept: Json = {};
     for (const [name, value] of Object.entries(rules)) {
-      if (!name.startsWith(prefix)) continue;
+      if (!name.startsWith(prefix) || (fix === true && name === lineWrapping))
+        continue;
       if (Array.isArray(value)) {
         const [severity, options, ...rest] = value as unknown[];
         const optionBag = asRecord(options);

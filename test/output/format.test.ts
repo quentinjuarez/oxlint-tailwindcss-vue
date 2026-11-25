@@ -142,6 +142,25 @@ describe('default format', () => {
     expect(output.endsWith('2 errors, 1 warning in 2 files\n')).toBe(true);
   });
 
+  it('adds refused fixes with --debug', () => {
+    const fixed: LintResult = {
+      ...result,
+      files: [
+        {
+          file: app,
+          skipped: [],
+          notices: [],
+          fixed: true,
+          refusedFixes: [{ code: 'unsafe-value', line: 2, column: 6 }],
+        },
+      ],
+    };
+    expect(formatReport(fixed, 'default', { ...plain, debug: true })).toContain(
+      'src/App.vue:2:6 fix refused unsafe-value\n',
+    );
+    expect(formatReport(fixed, 'default', plain)).not.toContain('fix refused');
+  });
+
   it('lists configs without the plugin with --debug', () => {
     const skipped: LintResult = {
       ...result,

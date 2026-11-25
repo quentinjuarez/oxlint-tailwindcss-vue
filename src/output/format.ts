@@ -94,6 +94,11 @@ function debugLines(result: LintResult, cwd: string, paint: Paint): string[] {
         `${paint('dim', `${path}:${notice.line}:${notice.column}`)} notice ${notice.code} ${notice.key}`,
       );
     }
+    for (const refused of report.refusedFixes ?? []) {
+      lines.push(
+        `${paint('dim', `${path}:${refused.line}:${refused.column}`)} fix refused ${refused.code}`,
+      );
+    }
   }
   return lines;
 }

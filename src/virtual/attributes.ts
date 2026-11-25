@@ -6,11 +6,11 @@ const TRANSITION_TAGS = new Set([
   'transition',
   'transition-group',
 ]);
+const NUXT_LINK_TAGS = new Set(['NuxtLink', 'nuxt-link']);
 const ROUTER_LINK_TAGS = new Set([
   'RouterLink',
   'router-link',
-  'NuxtLink',
-  'nuxt-link',
+  ...NUXT_LINK_TAGS,
 ]);
 
 const toCamel = (name: string): string =>
@@ -32,6 +32,7 @@ const TRANSITION_PROPS = new Set(
 const ROUTER_LINK_PROPS = new Set(
   withForms(['active-class', 'exact-active-class']),
 );
+const NUXT_LINK_PROPS = new Set(withForms(['prefetched-class']));
 
 function compilePatterns(patterns: readonly string[]): RegExp[] {
   const compiled: RegExp[] = [];
@@ -61,7 +62,8 @@ export function createAttributeMatcher(
     if (
       name === 'class' ||
       (TRANSITION_TAGS.has(tag) && TRANSITION_PROPS.has(name)) ||
-      (ROUTER_LINK_TAGS.has(tag) && ROUTER_LINK_PROPS.has(name))
+      (ROUTER_LINK_TAGS.has(tag) && ROUTER_LINK_PROPS.has(name)) ||
+      (NUXT_LINK_TAGS.has(tag) && NUXT_LINK_PROPS.has(name))
     )
       return 'class';
     if (userNames.has(name)) return 'setting';

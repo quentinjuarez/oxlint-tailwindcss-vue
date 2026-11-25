@@ -19,6 +19,7 @@ describe('parseCliArgs', () => {
       quiet: false,
       denyWarnings: false,
       debug: false,
+      fix: false,
     });
   });
 
@@ -48,6 +49,7 @@ describe('parseCliArgs', () => {
         '3',
         '--deny-warnings',
         '--debug',
+        '--fix',
         'src',
         'App.vue',
       ]),
@@ -62,6 +64,7 @@ describe('parseCliArgs', () => {
       maxWarnings: 3,
       denyWarnings: true,
       debug: true,
+      fix: true,
     });
   });
 

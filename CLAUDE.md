@@ -24,7 +24,8 @@ yarn format          # oxfmt, also sorts package.json
 - `src/cli/args.ts`: argument parsing. `src/cli/main.ts`: help, version,
   output, error messages and the exit code, which `exitCodeFor` in
   `src/output/format.ts` decides.
-- `src/index.ts`: the public API (`virtualize`, `lint`) and its types.
+- `src/index.ts`: the public API (`virtualize`, `lint`, `ToolError`) and its
+  types.
 - `test/`: Vitest. `test/fixtures/` holds byte-exact `.vue` fixtures; the ones
   in `test/fixtures/crlf/` keep their CRLF line endings (`.gitattributes`).
 - `scripts/`: release helpers run by CI, tested in `test/release-scripts.test.ts`.

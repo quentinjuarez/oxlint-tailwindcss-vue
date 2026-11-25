@@ -27,9 +27,11 @@ Options:
       --quiet               report errors only
       --max-warnings <n>    exit 1 above n warnings
       --deny-warnings       exit 1 on any warning
-      --debug               list skipped attributes with their reason
-                            (on stderr with json and github), and print
-                            the stack of an unexpected error
+      --fix                 apply the fixes of the Tailwind rules to the
+                            .vue files, then report what remains
+      --debug               list skipped attributes and refused fixes with
+                            their reason (on stderr with json and github),
+                            and print the stack of an unexpected error
   -h, --help                show this help
   -V, --version             show the version
 

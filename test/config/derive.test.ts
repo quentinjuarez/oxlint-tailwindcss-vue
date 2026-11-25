@@ -249,6 +249,44 @@ describe('deriveConfig', () => {
     expect(deriveWith()).not.toHaveProperty('options');
   });
 
+  it('leaves enforce-consistent-line-wrapping out in fix mode, in the rules and the overrides', () => {
+    const dir = join(projects, 'basic');
+    const configFile = join(dir, '.oxlintrc.json');
+    const printed = {
+      jsPlugins: ['oxlint-tailwindcss'],
+      rules: {
+        'tailwindcss/enforce-consistent-line-wrapping': 'warn',
+        'tailwindcss/no-duplicate-classes': 'error',
+      },
+      overrides: [
+        {
+          files: ['**/*.vue'],
+          rules: { 'tailwindcss/enforce-consistent-line-wrapping': 'off' },
+        },
+        {
+          files: ['src/**'],
+          rules: {
+            'tailwindcss/enforce-consistent-line-wrapping': 'warn',
+            'tailwindcss/enforce-sort-order': 'warn',
+          },
+        },
+      ],
+    };
+    const fixing = deriveConfig({ printed, configFile, cwd: dir, fix: true });
+    expect(fixing['rules']).toEqual({
+      'tailwindcss/no-duplicate-classes': 'error',
+    });
+    expect(fixing['overrides']).toEqual([
+      {
+        files: ['src/**/*.ts'],
+        rules: { 'tailwindcss/enforce-sort-order': 'warn' },
+      },
+    ]);
+    expect(
+      deriveConfig({ printed, configFile, cwd: dir })['rules'],
+    ).toHaveProperty(['tailwindcss/enforce-consistent-line-wrapping']);
+  });
+
   it('refuses a config without oxlint-tailwindcss', async () => {
     const error = await derive('no-plugin').catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ToolError);

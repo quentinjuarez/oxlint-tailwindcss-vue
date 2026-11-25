@@ -10,6 +10,7 @@ export interface CliOptions extends LintOptions {
   maxWarnings?: number;
   denyWarnings: boolean;
   debug: boolean;
+  fix: boolean;
 }
 
 export type ParsedArgs =
@@ -36,6 +37,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
         'max-warnings': { type: 'string' },
         'deny-warnings': { type: 'boolean' },
         debug: { type: 'boolean' },
+        fix: { type: 'boolean' },
         help: { type: 'boolean', short: 'h' },
         version: { type: 'boolean', short: 'V' },
       },
@@ -60,6 +62,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
     quiet: values.quiet ?? false,
     denyWarnings: values['deny-warnings'] ?? false,
     debug: values.debug ?? false,
+    fix: values.fix ?? false,
   };
   if (values.config !== undefined) options.config = values.config;
   if (values['ignore-path'] !== undefined) {

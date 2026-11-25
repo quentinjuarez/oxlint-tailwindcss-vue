@@ -33,6 +33,23 @@ is never bent to make a case pass: the attribute is skipped with a reason.
 6. The virtual file parses as a TypeScript module with `@babel/parser`
    (`sourceType: 'module'`, plugin `typescript`).
 
+## Fix mode
+
+`virtualizeForFix` gives the same rewrites and skips as `virtualize`, except
+that inside every rewrite the `\r` of a `\r\n` is written as a space. A template
+literal's raw value counts `\r\n` as one character, and oxlint-tailwindcss
+sizes its fix ranges on it. Blanks outside rewrites keep their `\r`.
+`assertContract(source, code, { fix: true })` checks it. Reports always use
+`virtualize`.
+
+One exception to "the same rewrites and skips": a bound JS string with a
+backslash line continuation before a CRLF (`:class="'p-2 \<CRLF>  m-2'"`).
+Once its `\r` is a space, the backslash escapes that space, the string holds a
+raw line feed, and the virtual file does not parse, so the safety net skips
+the attribute in fix mode only (`parse-safety-net`). It is not fixed and its
+findings stay in the report; copy-back would refuse any new text with a
+backslash anyway. `test/virtual/fix-mode.test.ts` pins it.
+
 ## Rewrites
 
 There are two private callees, and the same placement rules apply to both:
@@ -86,7 +103,8 @@ before it: `<p ui="a">` becomes ``  ;__(`a`)`` (two blanks first).
     `appear-from-class`, `appear-active-class`, `appear-to-class`,
     `move-class`;
   - on `RouterLink`, `router-link`, `NuxtLink` and `nuxt-link`:
-    `active-class`, `exact-active-class`.
+    `active-class`, `exact-active-class`;
+  - on `NuxtLink` and `nuxt-link` only: `prefetched-class`.
 - Every name in the user's `settings.tailwindcss.attributes`, and every name
   whose form as written, in camel case or in kebab case matches a pattern of
   `attributePatterns`. Their objects are read like the plugin reads

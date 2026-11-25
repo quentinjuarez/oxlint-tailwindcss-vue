@@ -32,7 +32,7 @@ silently. The usual workaround is to keep ESLint for templates only.
   (oxc#20465). The package is a CLI that runs next to oxlint.
 - No editor integration.
 - No linting of `<script>` blocks: oxlint already does it.
-- No `--fix` (planned, see "Fixes").
+- No `--fix` in 0.1 (shipped in 0.4, see "Fixes (0.4)").
 - No Svelte, Astro, Vue 2 or Pug templates.
 - No merged report with the native oxlint run: users chain
   `oxlint && oxlint-tailwindcss-vue`.
@@ -42,7 +42,8 @@ silently. The usual workaround is to keep ESLint for templates only.
 - A wrong line or column. It is worse than no report.
 - A report that also comes from the native oxlint run.
 - False reports on classes the component defines in its own `<style>`.
-- Writing to the user's project. 0.1 is read-only.
+- Writing to the user's project, except the class values that `--fix`
+  changes.
 
 ## Approaches considered
 
@@ -102,10 +103,10 @@ Rules:
    and a skipped attribute stays blank.
 3. Static values become template literals, so backslashes and line breaks keep
    their raw value; line breaks stay exactly as in the source, `\r` included.
-   (`--fix` will need `\r\n` written as ` \n`, because the plugin
-   sizes fix ranges on the LF-normalized raw value; reports do not depend on
-   it.) A value with a backtick or `${` keeps its original quotes when
-   it fits on one line without a backslash; otherwise it is skipped.
+   (`--fix` writes `\r\n` as ` \n`, because the plugin sizes fix ranges on the
+   LF-normalized raw value: see "Fix mode of the virtual file". Reports do not
+   depend on it.) A value with a backtick or `${` keeps its original quotes
+   when it fits on one line without a backslash; otherwise it is skipped.
 4. The virtual file must parse as a TypeScript module. It is parsed with
    `@babel/parser`; on an error, the rewrite at the error offset (or, between
    rewrites, the last one before it) is blanked with its notices, and the file
@@ -250,12 +251,12 @@ integration test pins the plugin's message format.
 
 ## Exit codes
 
-| Code     | Meaning                                                                                                                                                                 |
-| :------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0        | No error, and warnings within `--max-warnings` (or the root config's `options.maxWarnings`)                                                                             |
-| 1        | At least one error, a virtual file oxlint could not parse, or warnings over the limit                                                                                   |
-| 2        | Tool failure: oxlint not found, no config group loads oxlint-tailwindcss, a listed file that cannot be read, missing CSS entry point, unexpected oxlint output or crash |
-| 130, 143 | Interrupted by SIGINT or SIGTERM                                                                                                                                        |
+| Code     | Meaning                                                                                                                                                                                                      |
+| :------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0        | No error, and warnings within `--max-warnings` (or the root config's `options.maxWarnings`)                                                                                                                  |
+| 1        | At least one error, a virtual file oxlint could not parse, or warnings over the limit                                                                                                                        |
+| 2        | Tool failure: oxlint not found, no config group loads oxlint-tailwindcss, a listed file that cannot be read, a fixed file that cannot be written, missing CSS entry point, unexpected oxlint output or crash |
+| 130, 143 | Interrupted by SIGINT or SIGTERM                                                                                                                                                                             |
 
 ## Command line
 
@@ -270,17 +271,19 @@ oxlint-tailwindcss-vue [options] [paths...]
       --quiet               report errors only
       --max-warnings <n>    exit 1 above n warnings
       --deny-warnings       exit 1 on any warning
-      --debug               list skipped attributes with their reason
-                            (on stderr with json and github), and print
-                            the stack of an unexpected error
-  -h, --help
-  -V, --version
+      --fix                 apply the fixes of the Tailwind rules to the
+                            .vue files, then report what remains
+      --debug               list skipped attributes and refused fixes with
+                            their reason (on stderr with json and github),
+                            and print the stack of an unexpected error
+  -h, --help                show this help
+  -V, --version             show the version
 ```
 
-An unexpected error while reading one `.vue` file (the virtualizer or the
-style reader) is a tool failure that names the file and asks for a bug report
-at the issues URL of `package.json`; the error is kept as its `cause`, and
-`--debug` prints its stack.
+An unexpected error while reading one `.vue` file (the virtualizer, the
+style reader or the copy-back of fixes) is a tool failure that names the file
+and asks for a bug report at the issues URL of `package.json`; the error is
+kept as its `cause`, and `--debug` prints its stack.
 
 ## Programmatic API
 
@@ -289,7 +292,11 @@ at the issues URL of `package.json`; the error is kept as its `cause`, and
 - `lint(options)` runs the whole pipeline and returns the mapped diagnostics,
   with `warningOptions`: the `denyWarnings` and `maxWarnings` of the root
   config's `options`, which the CLI applies, and `oxlintStderr` when oxlint or
-  its JS plugins printed anything on stderr, which the CLI prints.
+  its JS plugins printed anything on stderr, which the CLI prints. With
+  `fix: true` it applies the fixes first, and a `FileReport` gets `fixed` and
+  `refusedFixes` (see "Reporting").
+- `ToolError` is the error `lint()` rejects with for a tool failure, with a
+  `message` and an optional `hint`.
 
 ## Temp files and signals
 
@@ -301,14 +308,182 @@ at the issues URL of `package.json`; the error is kept as its `cause`, and
 - The plugin's own cache in the temp dir is never touched (its folder,
   `oxlint-tailwindcss-<user>`, can share the prefix on Windows).
 
-## Fixes (planned)
+## Fixes (0.4)
+
+`--fix` (and `lint({ fix: true })`) applies the fixes of the Tailwind rules
+enabled in the user's config to the `.vue` files, then lints them again and
+reports what remains. A linter that fixes is easier to adopt: 15 of the 27
+rules of oxlint-tailwindcss 1.17.2 can fix code (canonical classes, sort order,
+duplicates, shorthands and more).
 
 Fixes change lengths and line counts, so they cannot be copied back by offset.
-The validated strategy: run `--fix` in a loop until nothing changes, compare
-the token skeletons of the virtual file before and after, and copy back only
-changed string tokens whose original text still matches. A fix is refused when
-the file no longer parses, the skeleton changes, the file changed on disk, or
-the new value contains its quote character, a backslash, a backtick or `${`.
+The strategy, validated with the rest of this design: let oxlint fix the
+virtual files, compare their tokens before and after, and copy back only the
+string contents that changed, where that is exact and safe.
+
+Goals:
+
+- The fixes oxlint would apply to a script block, with the user's rules, rule
+  options, overrides and disable comments.
+- Never a wrong character in a `.vue` file: a fix that cannot be copied back
+  exactly is refused, and its finding stays in the report.
+
+Non-goals: `--fix-suggestions` and `--fix-dangerously`; a summary of applied
+fixes (oxlint prints none); fixing an attribute the virtualizer skips.
+
+Anti-goals:
+
+- A silently wrong class. Without the fix mode below, oxlint turns
+  `mt-2\r\n      mb-2 mt-2` into `mt-2\n      mb-22`: the plugin sizes its
+  fix on the LF-normalized raw value of the template literal, so the range
+  lands one character early, and `mb-22` is a valid class that no rule reports.
+- A change outside a class value: markup, scripts, styles and the line endings
+  of the file stay as they are.
+- Writing a file that changed after it was read.
+
+### Pipeline
+
+1. Select the files and read the configs as in a normal run.
+2. Per config group, write the virtual files in fix mode and the derived
+   config to the temp root, without `enforce-consistent-line-wrapping` in its
+   `rules` and in the `rules` of its overrides (see "Line wrapping").
+3. Run `oxlint -c <derived config> --fix --format json -A all
+   --no-error-on-unmatched-pattern <virtual paths>` until no virtual file
+   changes, at most 10 passes: one pass applies only the fixes that do not
+   overlap (3 passes on a component with duplicates, a shorthand and an
+   unsorted list), and 10 is ESLint's cap. At the cap, the last state is used;
+   two rules that undo each other (`enforce-logical` and `enforce-physical`)
+   end there. A pass after the first runs only the virtual files that the
+   previous pass changed. What the passes print on stderr joins `oxlintStderr`.
+4. Per `.vue` file whose virtual file changed: compare and copy back. Every
+   config group is fixed before any file is written, so a tool failure during the
+   fix passes writes nothing. Then check each file on disk and write it.
+5. Run the normal pipeline on the files as written. The findings, the
+   `--debug` notes and the exit code describe what remains.
+
+### Fix mode of the virtual file
+
+The contract holds, with one difference: inside a template literal, static
+value or bound expression, `\r\n` is written as ` \n`. A template literal's
+raw value counts `\r\n` as one character, so the plugin's fix ranges would
+land one character early per earlier `\r\n`; ` \n` keeps both counts equal.
+A template literal with a lone `\r` is not fixed (`line-break`). The report
+run keeps the contract as it is.
+
+One rewrite of the report run is lost in fix mode: a bound JS string with a
+backslash line continuation before a CRLF (`:class="'p-2 \<CRLF>  m-2'"`).
+With the `\r` written as a space, the backslash escapes that space instead of
+the line break, so the string holds a raw line feed and the virtual file does
+not parse. The safety net skips that attribute in fix mode only
+(`parse-safety-net`): it is not fixed, and its findings stay in the report.
+A fix that keeps the backslash would be refused anyway, since a new text with a
+backslash is refused (`unsafe-value`).
+
+### Line wrapping
+
+`enforce-consistent-line-wrapping` is the only fixable rule whose fix reads
+text outside the class string: it rebuilds the value as a block indented from
+the leading whitespace of the line where the value starts. In the virtual
+file, that whitespace counts the blanked tag and attribute name, is always
+spaces, and every static value is a template literal, which the rule wraps
+even with `wrapStrings: "never"`. Copied back, its fixes would write wrong
+indents, spaces in tab-indented files and LF breaks in CRLF files. The fix
+passes run without the rule, and its findings stay in the report (a README
+limitation). As a safety net, a replacement whose new text has more line
+breaks than the original, or any carriage return, is refused (`line-break`).
+Fixing it with the attribute's real indentation and line ending is later work.
+
+### Comparing and copying back
+
+- Both virtual files are tokenized with `@babel/parser` (`typescript`, as in
+  the safety net). Babel 8 template tokens hold their delimiters (`` ...` ``
+  and `...${`), so a value's content is `[start + 1, end - 1]`, or
+  `[start + 1, end - 2]` for `...${`. A fixed file that does not parse
+  refuses every fix of its `.vue` file (`parse-error`).
+- Each rewrite is a region of tokens that starts with `;`, the callee (`__` or
+  `___`) and `(`, and ends at the matching `)`; outside the regions there are
+  only blanks and disable comments. The regions of both files are paired in
+  order. A different count refuses every fix of the file (`regions-changed`).
+- In a pair, the skeleton (the label of every token, and the raw text of every
+  token that is not a string or template part, numbers and regular
+  expressions included) must be equal, or the region is refused
+  (`skeleton-changed`). A changed string or template part becomes a
+  replacement: the original token's span is the same span in the `.vue` file,
+  and the `.vue` text there must equal the original token text once ` \n` is
+  decoded, or the region is refused (`source-mismatch`).
+- Decoding: in a value whose original raw text had `\r\n`, every `\n` of the
+  new text becomes `\r\n`, and the one space just before it, when there is
+  one, is dropped (it was the placeholder). That space is the placeholder
+  only when the original has no blank before that CRLF. A changed value whose
+  original has a space or a tab before a CRLF is refused (`line-break`): a fix
+  such as `no-unnecessary-whitespace` may merge the placeholder with the real
+  blank, and the two can no longer be told apart.
+- The new text is refused (`unsafe-value`) when it holds the quote character
+  of its attribute, a backslash, a backtick or `${`, `&` followed by a letter
+  or `#`, with or without `;` (an HTML character reference, or something Vue
+  may read as one), or a control character: U+0000 to U+001F other than tab,
+  line feed and carriage return, or U+007F (DEL). The rule for a value without
+  quotes applies to bound values too: it also refuses whitespace, a quote,
+  `=`, `<`, `>` and an empty new text, since `<p class=  id=x>` would make Vue
+  read `id=x` as the class value. A quoted value may become empty
+  (`class=""`).
+- A changed value that mixes CRLF with LF, holds a lone CR, or has a space or
+  a tab before a CRLF is refused (`line-break`), as is a replacement with more
+  line breaks than the original, or whose new text holds a carriage return
+  before decoding.
+- A refusal is located at the start of its attribute, in the file as written.
+  A file-wide refusal (`parse-error`, `regions-changed`, `changed-on-disk`) is
+  located at the file's start.
+- A refused region refuses its replacements and no other region's.
+  Replacements are applied from the end of the file to the start.
+
+### Writing
+
+- The file is read again as bytes just before writing, and compared with the
+  UTF-8 encoding of the text that was virtualized. A file that changed during
+  the run, or that is not valid UTF-8 (its bytes do not round-trip), is not
+  written: `changed-on-disk`, at line 1, column 1, and it replaces the other
+  refusals of that file. A file with a byte order mark is fixed as usual.
+- A file that cannot be written (for example a read-only file) makes `lint()`
+  reject with a `ToolError` that names the file
+  (`Cannot write <file>: <reason>`, with a hint). Files already written stay
+  written.
+- The file is written in place, as oxlint and ESLint write fixes; the BOM and
+  the line endings outside the replaced values stay as they are.
+
+### Reporting
+
+- `lint()` takes `fix?: boolean`. A `FileReport` gets `fixed: true` when its
+  file was written, and `refusedFixes`, with a `code` and the line and column
+  of the refusal (see "Comparing and copying back") in the file as written.
+- `--debug` prints `<path>:<line>:<column> fix refused <code>` with the other
+  notes: after the findings in the default format, on stderr with `json` and
+  `github`.
+- The help and the README document `--fix`. The "No fixes" limitation went,
+  and a new one says that `--fix` does not apply
+  `enforce-consistent-line-wrapping` in templates.
+
+### Shipped with it
+
+- `ToolError` is exported. The README says what `lint()` rejects with: a
+  `ToolError` (a message and an optional `hint`) for a tool failure, the
+  signal's reason when it is aborted, and any other error only on a bug.
+- `prefetched-class` is checked on `NuxtLink` and `nuxt-link` only, and the
+  README no longer lists it as not checked.
+
+### Tests
+
+- The copy-back is a pure function (virtual file before and after, `.vue`
+  text, regions) with unit tests for every replacement shape, every refusal
+  code, the decoding and the region pairing.
+- Integration tests run the real plugin's fixes on fixture projects: static
+  values, bound strings and template literals, a CRLF value, a fix that would
+  bring a quote into its attribute. Each asserts the written file and the
+  remaining findings, on Linux and Windows.
+- Vendor plugins with crafted fixes cover what the real plugin does not do: a
+  skeleton change, fixes that never converge, a file changed during the run.
+- The property test gets a fix mode: the contract holds, and copying back an
+  unchanged virtual file writes nothing.
 
 ## Testing
 
